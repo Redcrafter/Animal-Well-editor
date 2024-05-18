@@ -1,8 +1,8 @@
 #pragma once
 
 #include <array>
-#include <emmintrin.h>
-#include <wmmintrin.h>
+#include <optional>
+#include <immintrin.h>
 
 // Encryption: Forward Rijndael S-box
 constexpr unsigned char s[256] = {
@@ -212,9 +212,11 @@ auto aesdeclast(__m128i& a, __m128i& b) {
     return _mm_aesdeclast_si128(a, b);
 }
 
+#ifdef _MSC_VER
 __m128i operator^(__m128i a, __m128i b) {
     return _mm_xor_si128(a, b);
 }
+#endif
 
 std::optional<std::vector<uint8_t>> decrypt(const char* data, int length, const std::array<uint8_t, 16>& key) {
     auto expandedKey1 = expandKey(key);
