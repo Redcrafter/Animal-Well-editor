@@ -73,13 +73,6 @@ static void onResize(GLFWwindow* window, int width, int height) {
     screenSize = glm::vec2(width, height);
     glViewport(0, 0, width, height);
     projection = glm::ortho<float>(0, width, height, 0, 0.0f, 100.0f);
-    // projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 0.0f, 100.0f); // In world coordinates
-}
-
-static bool isSolid(uint16_t id) {
-    return id == 81 ||
-           id == 356 || id == 314 || id == 299 || id == 140 || id == 180 || id == 308 || id == 546 || id == 676 ||
-           id == 215 || id == 1 || id == 357 || id == 390 || id == 452 || id == 309 || id == 389 || id == 307 || id == 727;
 }
 
 std::vector<glm::vec4> renderMap(const Map& map, int layer, std::map<uint32_t, SpriteData>& sprites, std::vector<uv_data>& uvs) {
@@ -142,10 +135,7 @@ std::vector<glm::vec4> renderMap(const Map& map, int layer, std::map<uint32_t, S
                     auto right = glm::vec2(uv.size.x, 0);
                     auto down = glm::vec2(0, uv.size.y);
 
-                    bool self_contiguous = (uv.flags & (1 << 9)) != 0;
-                    bool contiguous = (uv.flags & (1 << 7)) != 0;
-
-                    if (contiguous || self_contiguous) {
+                    if (uv.contiguous || uv.self_contiguous) {
                         bool l, r, u, d;
 
                         auto l_ = map.getTile(layer, x2 + room.x * 40 - 1, y2 + room.y * 22);
@@ -153,16 +143,16 @@ std::vector<glm::vec4> renderMap(const Map& map, int layer, std::map<uint32_t, S
                         auto u_ = map.getTile(layer, x2 + room.x * 40, y2 + room.y * 22 - 1);
                         auto d_ = map.getTile(layer, x2 + room.x * 40, y2 + room.y * 22 + 1);
 
-                        if (self_contiguous) {
+                        if (uv.self_contiguous) {
                             l = l_.has_value() && l_.value().tile_id == tile.tile_id;
                             r = r_.has_value() && r_.value().tile_id == tile.tile_id;
                             u = u_.has_value() && u_.value().tile_id == tile.tile_id;
                             d = d_.has_value() && d_.value().tile_id == tile.tile_id;
                         } else {
-                            l = !l_.has_value() || isSolid(l_.value().tile_id);
-                            r = !r_.has_value() || isSolid(r_.value().tile_id);
-                            u = !u_.has_value() || isSolid(u_.value().tile_id);
-                            d = !d_.has_value() || isSolid(d_.value().tile_id);
+                            l = !l_.has_value() || uvs[l_.value().tile_id].collides_right;
+                            r = !r_.has_value() || uvs[r_.value().tile_id].collides_left;
+                            u = !u_.has_value() || uvs[u_.value().tile_id].collides_down;
+                            d = !d_.has_value() || uvs[d_.value().tile_id].collides_up;
                         }
 
                         if (l && r && u && d) {
