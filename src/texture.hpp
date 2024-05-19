@@ -22,7 +22,7 @@ class Texture {
     }
     Texture(const std::vector<uint8_t> &data) : Texture((const char *)data.data(), data.size()) {}
     Texture(const char *ptr, int length) {
-        data = (int*)stbi_load_from_memory((const stbi_uc *)ptr, length, &width, &height, &channels, 4);
+        data = (int *)stbi_load_from_memory((const stbi_uc *)ptr, length, &width, &height, &channels, 4);
         assert(channels == 4);
     }
     Texture(Texture &&) = delete;
@@ -41,16 +41,16 @@ class Texture {
         return data[x + y * width];
     }
     int operator()(int x, int y) const {
-        if(x > width || y > height) return 0;
+        if (x > width || y > height) return 0;
         return data[x + y * width];
     }
 
     int get(int x, int y) const {
-        if(x > width || y > height) return 0;
+        if (x > width || y > height) return 0;
         return data[x + y * width];
     }
     void set(int x, int y, int value) {
-        if(x > width || y > height) return;
+        if (x > width || y > height) return;
         data[x + y * width] = value;
     }
 };

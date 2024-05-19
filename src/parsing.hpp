@@ -16,23 +16,6 @@
 
 #include <glm/glm.hpp>
 
-enum class AssetType {
-    Text = 0,
-    MapData = 1,
-    Png = 2,
-    Ogg = 3,
-    SpriteData = 5,
-    Shader = 7,
-    Font = 8,
-
-    XPS = 9,
-    /*
-    Encrypted_MapData = 65,
-    Encrypted_Png = 66,
-    Encrypted_Ogg = 67
-    */
-};
-
 // starts at 0x020E9A00 or 1420eb000 in ghidra
 struct Asset {
     // 0 = txt
@@ -58,18 +41,29 @@ struct Asset {
 
     uint8_t unknown4[16];
 };
-
 static_assert(sizeof(Asset) == 0x30);
 
-auto readFile(const char *path) {
-    std::ifstream testFile(path, std::ios::binary);
-    std::vector<char> fileContents((std::istreambuf_iterator<char>(testFile)), std::istreambuf_iterator<char>());
-    return fileContents;
-}
+enum class AssetType {
+    Text = 0,
+    MapData = 1,
+    Png = 2,
+    Ogg = 3,
+    SpriteData = 5,
+    Shader = 7,
+    Font = 8,
 
-bool contains(const std::string &str, const char *search) {
-    return str.find(search) != std::string::npos;
-}
+    XPS = 9,
+    /*
+    Encrypted_MapData = 65,
+    Encrypted_Png = 66,
+    Encrypted_Ogg = 67
+    */
+};
+
+struct OutAsset {
+    AssetType type;
+    std::vector<uint8_t> data;
+};
 
 struct MapHeader {
     uint32_t signature1;
@@ -82,7 +76,7 @@ struct MapHeader {
 
 struct MapTile {
     uint16_t tile_id;
-    uint8_t idk1;
+    uint8_t param;  // depends on tile_id
 
     union {
         struct {
@@ -102,12 +96,117 @@ struct Room {
 
     uint8_t bgId;
     uint8_t waterLevel;
-    uint32_t idk3;
+    uint32_t idk1;
 
     MapTile tiles[2][22][40];
 };
 
 static_assert(sizeof(Room) == 0x1b88);
+
+class Map {
+   public:
+    glm::ivec2 offest, size;
+    std::vector<Room> rooms;
+    std::unordered_map<uint16_t, int> coordinate_map;
+
+    const Room* operator()(int x, int y) const {
+        if(x < 0 || x >= 256 || y < 0 || y >= 256) 
+            return nullptr;
+        if(coordinate_map.contains(x | (y << 8))) {
+            return &rooms[coordinate_map.at(x | (y << 8))];
+        }
+        return nullptr;
+    }
+
+    std::optional<MapTile> getTile(int layer, int x, int y) const {
+        auto rx = x / 40;
+        auto ry = y / 22;
+
+        if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256) 
+            return std::nullopt;
+
+        if(coordinate_map.contains(rx | (ry << 8))) {
+            const auto& room = rooms[coordinate_map.at(rx | (ry << 8))];
+            return room.tiles[layer][y % 22][x % 40];
+        }
+
+        return std::nullopt;
+    }
+};
+
+typedef glm::vec<2, uint16_t, glm::defaultp> shortVec2;
+
+struct SpriteAnimation {
+    uint16_t start;        // First composition in the animation
+    uint16_t end;          // Last composition in the animation
+    uint16_t frame_delay;  // After waiting this many frames, increment the composition number
+};
+static_assert(sizeof(SpriteAnimation) == 6);
+
+struct SubSprite {
+    shortVec2 atlas_pos;      // Atlas coordinates, relative to the entity's base coordinates
+    shortVec2 composite_pos;  // Position of this subsprite on the composited sprite
+    shortVec2 size;           // Size of the subsprite
+};
+static_assert(sizeof(SubSprite) == 12);
+
+struct SpriteLayer {
+	union {
+		struct {
+            uint8_t : 1;
+            bool is_normals1 : 1;
+            bool is_normals2 : 1;
+            bool uv_light : 1;
+            bool is_conditional : 1;
+		};
+        uint8_t flags;
+	};
+
+    uint8_t alpha;
+    bool is_visible;
+};
+static_assert(sizeof(SpriteLayer) == 3);
+
+struct SpriteData {
+    shortVec2 composite_size;
+    uint16_t layer_count;
+    uint16_t composition_count;
+    uint8_t subsprite_count;
+    uint8_t animation_count;
+
+    std::vector<SpriteAnimation> animations;
+    std::vector<uint8_t> compositions;
+    std::vector<SubSprite> sub_sprites;
+    std::vector<SpriteLayer> layers;
+};
+
+struct uv_data {
+    shortVec2 pos;
+    shortVec2 size;
+
+    union {
+        struct {
+            bool collides_left : 1;
+            bool collides_right : 1;
+            bool collides_up : 1;
+            bool collides_down : 1;
+
+            bool not_placeable : 1;
+            bool additive : 1;
+
+            bool obscures : 1;
+            bool contiguous : 1;
+            bool blocks_light : 1;
+            bool self_contiguous : 1;
+            bool hidden : 1;
+            bool dirt : 1;
+            bool has_normals : 1;
+            bool uv_light : 1;
+        };
+        uint16_t flags;
+    };
+};
+static_assert(sizeof(uv_data) == 10);
 
 struct TileMapping {
     int internal_id;
@@ -274,7 +373,14 @@ TileMapping spriteMapping[] = {
     {0x9a, 0x1c, 0x330},
     {0x9b, 0xa2, 0x333},
     {0x9c, 0xd9, 0x334},
-    {0x9d, 0xaf, 0x33e}};
+    {0x9d, 0xaf, 0x33e}
+};
+
+auto readFile(const char *path) {
+    std::ifstream testFile(path, std::ios::binary);
+    std::vector<char> fileContents((std::istreambuf_iterator<char>(testFile)), std::istreambuf_iterator<char>());
+    return fileContents;
+}
 
 std::optional<std::vector<uint8_t>> tryDecrypt(const Asset &item, const char *data) {
     std::array<uint8_t, 16> keys[3] = {
@@ -321,84 +427,8 @@ void dumpNormalFiles(const std::vector<char> &input) {
     }
 }
 
-typedef glm::vec<2, uint16_t, glm::defaultp> shortVec2;
-
-struct SpriteAnimation {
-    uint16_t start;        // First composition in the animation
-    uint16_t end;          // Last composition in the animation
-    uint16_t frame_delay;  // After waiting this many frames, increment the composition number
-};
-static_assert(sizeof(SpriteAnimation) == 6);
-
-struct SubSprite {
-    shortVec2 atlas_pos;      // Atlas coordinates, relative to the entity's base coordinates
-    shortVec2 composite_pos;  // Position of this subsprite on the composited sprite
-    shortVec2 size;           // Size of the subsprite
-};
-static_assert(sizeof(SubSprite) == 12);
-
-struct SpriteLayer {
-    uint8_t : 1;
-    bool is_normals1 : 1;
-    bool is_normals2 : 1;
-    bool uv_light : 1;
-    bool is_conditional : 1;
-
-    uint8_t alpha;
-    bool is_visible;
-};
-static_assert(sizeof(SpriteLayer) == 3);
-
-struct SpriteData {
-    uint32_t magic;
-    shortVec2 composite_size;
-    uint16_t layer_count;
-    uint16_t composition_count;
-    uint8_t subsprite_count;
-    uint8_t animation_count;
-
-    std::vector<SpriteAnimation> animations;
-    std::vector<uint8_t> compositions;
-    std::vector<SubSprite> sub_sprites;
-    std::vector<SpriteLayer> layers;
-};
-
-struct uv_data {
-    shortVec2 pos;
-    shortVec2 size;
-
-    union {
-	    struct {
-            /*
-            bool collides_left : 1;
-            bool collides_right : 1;
-            bool collides_up : 1;
-            bool collides_down : 1;
-            bool not_placeable : 1;
-            bool additive : 1;
-
-	    	bool has_normals : 1;
-            bool hidden : 1;
-            bool blocks_light : 1;
-            bool obscures : 1;
-            bool contiguous : 1;
-            bool self_contiguous : 1;
-            bool dirt : 1;
-            bool uv_light : 1;
-            */
-	    };
-        uint16_t flags;
-    };
-};
-static_assert(sizeof(uv_data) == 10);
-
-struct OutAsset {
-    AssetType type;
-    std::vector<uint8_t> data;
-};
-
 static auto loadGameAssets() {
-    auto input = readFile("c:/Spiele/SteamLibrary/steamapps/common/Animal Well/Animal Well.exe");
+    auto input = readFile("C:/Program Files (x86)/Steam/steamapps/common/Animal Well/Animal Well.exe");
     auto assets = (const Asset *)(input.data() + 0x020E9A00);
 
     std::vector<OutAsset> res;
@@ -418,4 +448,76 @@ static auto loadGameAssets() {
     }
 
     return res;
+}
+
+static std::vector<uv_data> parse_uvs(const OutAsset &asset) {
+    auto ptr = (uv_data *)(asset.data.data() + 0xC);
+
+    auto magic = *(uint32_t *)asset.data.data();  // proabably magic?
+    auto count = *(uint32_t *)(asset.data.data() + 4);
+    auto unused = *(uint32_t *)(asset.data.data() + 8);  // null in the given asset
+
+    assert(count == (asset.data.size() - 0xC) / sizeof(uv_data));
+    return std::vector<uv_data>(ptr, ptr + count);
+}
+
+static SpriteData parse_sprite(const OutAsset &asset) {
+    assert(asset.type == AssetType::SpriteData);
+
+    auto ptr = asset.data.data();
+
+    auto magic = *(uint32_t *)ptr;
+    assert(magic == 0x0003AC1D);
+
+    SpriteData out;
+    out.composite_size.x = *(uint16_t *)(ptr + 4);
+    out.composite_size.y = *(uint16_t *)(ptr + 6);
+    out.layer_count = *(uint16_t *)(ptr + 8);
+    out.composition_count = *(uint16_t *)(ptr + 10);
+    out.subsprite_count = *(uint8_t *)(ptr + 12);
+    out.animation_count = *(uint8_t *)(ptr + 13);
+
+    ptr += 0x30;
+
+    out.animations = {(SpriteAnimation *)ptr, ((SpriteAnimation *)ptr) + out.animation_count};
+    ptr += out.animation_count * sizeof(SpriteAnimation);
+
+    out.compositions = {ptr, ptr + out.layer_count * out.composition_count};
+    ptr += out.layer_count * out.composition_count;
+
+    out.sub_sprites = {(SubSprite *)ptr, ((SubSprite *)ptr) + out.subsprite_count};
+    ptr += out.subsprite_count * sizeof(SubSprite);
+
+    out.layers = {(SpriteLayer *)ptr, (SpriteLayer *)(ptr + out.layer_count * 3)};
+
+    return out;
+}
+
+static Map parse_map(const OutAsset &asset) {
+    auto head = *(MapHeader *)asset.data.data();
+    Room *rooms = (Room *)(asset.data.data() + 0x10);
+
+    Map m;
+    m.rooms = {rooms, rooms + head.roomCount};
+
+    int x_min = 65535, x_max = 0;
+    int y_min = 65535, y_max = 0;
+
+    for (int i = 0; i < head.roomCount; i++) {
+        auto &room = m.rooms[i];
+        x_min = std::min(x_min, (int)room.x);
+        x_max = std::max(x_max, (int)room.x);
+        y_min = std::min(y_min, (int)room.y);
+        y_max = std::max(y_max, (int)room.y);
+
+        m.coordinate_map[room.x | (room.y << 8)] = i;
+    }
+
+    int width = x_max - x_min + 1;
+    int height = y_max - y_min + 1;
+
+    m.offest = {x_min, y_min};
+    m.size = {width, height};
+
+    return m;
 }

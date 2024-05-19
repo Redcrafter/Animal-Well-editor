@@ -233,4 +233,10 @@ struct ShaderProgram {
     void setVec3(const char* name, const glm::vec3& vec) {
         glUniform3f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z);
     }
+    void setVec4(const std::string& name, const glm::vec4& vec) {
+        setVec4(name.c_str(), vec);
+    }
+    void setVec4(const char* name, const glm::vec4& vec) {
+        glUniform4f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z, vec.w);
+    }
 };

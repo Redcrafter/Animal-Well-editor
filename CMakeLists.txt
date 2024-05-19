@@ -37,3 +37,8 @@ add_executable(editor ${Common_sources} ${imgui_sources}
 
 target_include_directories(editor PRIVATE "lib/imgui" "lib/stb" "lib/glm" "lib/glad/include" glfw)
 target_link_libraries(editor PRIVATE glfw ${LIBS})
+
+add_custom_command(TARGET editor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/src/shaders
+                ${CMAKE_CURRENT_BINARY_DIR}/shaders)

@@ -138,7 +138,7 @@ constexpr auto expandKey(const std::array<uint8_t, 16>& key) {
     return out;
 }
 
-#if false // normal aes key exapsnion from https://github.com/ceceww/aes/blob/master/structures.h
+#if false  // normal aes key exapsnion from https://github.com/ceceww/aes/blob/master/structures.h
 // Auxiliary function for KeyExpansion
 void KeyExpansionCore(unsigned char* in, unsigned char i) {
     // Rotate left by one byte: shift left
@@ -268,7 +268,7 @@ std::optional<std::vector<uint8_t>> decrypt(const char* data, int length, const 
 
                 *(__m128i*)(lVar2 + lVar4) = auVar8 ^ auVar7;
                 if (uVar3 * 0x10 + -0x10 == lVar4) break;
-                
+
                 auto lVar1 = lVar4 + 0x20;
                 lVar4 += 0x10;
                 auVar7 = auVar13;
