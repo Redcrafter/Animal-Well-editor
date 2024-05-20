@@ -75,10 +75,10 @@ static void onResize(GLFWwindow* window, int width, int height) {
     projection = glm::ortho<float>(0, width, height, 0, 0.0f, 100.0f);
 }
 
-std::vector<glm::vec4> renderMap(const Map& map, int layer, std::map<uint32_t, SpriteData>& sprites, std::vector<uv_data>& uvs) {
+auto renderMap(const Map& map, int layer, std::map<uint32_t, SpriteData>& sprites, std::vector<uv_data>& uvs) {
     auto atlasSize = glm::vec2(1024, 2048);
 
-    std::vector<glm::vec4> vertecies;
+    std::vector<glm::vec4> vert;
 
     for (auto&& room : map.rooms) {
         for (int y2 = 0; y2 < 22; y2++) {
@@ -123,13 +123,13 @@ std::vector<glm::vec4> renderMap(const Map& map, int layer, std::map<uint32_t, S
                         }
                         assert(!tile.rotate_90 && !tile.rotate_180, "sprite rotation not implemented");
 
-                        vertecies.emplace_back(ap, aUv / atlasSize);                                                                // tl
-                        vertecies.emplace_back(ap + glm::vec2(subsprite.size.x, 0), glm::vec2(aUv.x + size.x, aUv.y) / atlasSize);  // tr
-                        vertecies.emplace_back(ap + glm::vec2(0, subsprite.size.y), glm::vec2(aUv.x, aUv.y + size.y) / atlasSize);  // bl
+                        vert.emplace_back(ap, aUv / atlasSize);                                                                // tl
+                        vert.emplace_back(ap + glm::vec2(subsprite.size.x, 0), glm::vec2(aUv.x + size.x, aUv.y) / atlasSize);  // tr
+                        vert.emplace_back(ap + glm::vec2(0, subsprite.size.y), glm::vec2(aUv.x, aUv.y + size.y) / atlasSize);  // bl
 
-                        vertecies.emplace_back(ap + glm::vec2(subsprite.size.x, 0), glm::vec2(aUv.x + size.x, aUv.y) / atlasSize);  // tr
-                        vertecies.emplace_back(ap + glm::vec2(subsprite.size), (aUv + size) / atlasSize);                           // br
-                        vertecies.emplace_back(ap + glm::vec2(0, subsprite.size.y), glm::vec2(aUv.x, aUv.y + size.y) / atlasSize);  // bl
+                        vert.emplace_back(ap + glm::vec2(subsprite.size.x, 0), glm::vec2(aUv.x + size.x, aUv.y) / atlasSize);  // tr
+                        vert.emplace_back(ap + glm::vec2(subsprite.size), (aUv + size) / atlasSize);                           // br
+                        vert.emplace_back(ap + glm::vec2(0, subsprite.size.y), glm::vec2(aUv.x, aUv.y + size.y) / atlasSize);  // bl
                     }
                 } else {
                     auto right = glm::vec2(uv.size.x, 0);
@@ -219,19 +219,38 @@ std::vector<glm::vec4> renderMap(const Map& map, int layer, std::map<uint32_t, S
                     }
                     auto uvp = glm::vec2(uv.pos);
 
-                    vertecies.emplace_back(pos                          , uvp / atlasSize);           // tl
-                    vertecies.emplace_back(pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize); // tr
-                    vertecies.emplace_back(pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);  // bl
+                    vert.emplace_back(pos                          , uvp / atlasSize);           // tl
+                    vert.emplace_back(pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize); // tr
+                    vert.emplace_back(pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);  // bl
 
-                    vertecies.emplace_back(pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize);   // tr
-                    vertecies.emplace_back(pos + glm::vec2(uv.size), (uvp + down + right) / atlasSize); // br
-                    vertecies.emplace_back(pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);    // bl
+                    vert.emplace_back(pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize);   // tr
+                    vert.emplace_back(pos + glm::vec2(uv.size), (uvp + down + right) / atlasSize); // br
+                    vert.emplace_back(pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);    // bl
                 }
             }
         }
     }
 
-    return vertecies;
+    return vert;
+}
+
+auto renderBgs(const Map& map) {
+    std::vector<std::pair<glm::vec2, glm::vec3>> bg;
+
+    for(auto&& room : map.rooms) {
+        auto rp = glm::vec2(room.x * 40 * 8, room.y * 22 * 8);
+
+        if(room.bgId != 0) {
+            bg.push_back({ rp                        , { 0, 0, room.bgId - 1 } }); // tl
+            bg.push_back({ { rp.x + 320, rp.y }      , { 1, 0, room.bgId - 1 } }); // tr
+            bg.push_back({ { rp.x      , rp.y + 176 }, { 0, 1, room.bgId - 1 } }); // bl
+
+            bg.push_back({ { rp.x + 320, rp.y }      , { 1, 0, room.bgId - 1 } }); // tr
+            bg.push_back({ { rp.x + 320, rp.y + 176 }, { 1, 1, room.bgId - 1 } }); // br
+            bg.push_back({ { rp.x      , rp.y + 176 }, { 0, 1, room.bgId - 1 } }); // bl
+        }
+    }
+    return bg;
 }
 
 // Main code
@@ -323,14 +342,42 @@ int main(int, char**) {
 #pragma region map rendering
     auto gameData = loadGameAssets();
 
+    Texture bg_tex;
+    glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex.id);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    bg_tex.LoadSubImage(1  - 1, gameData[14].data);
+    bg_tex.LoadSubImage(2  - 1, gameData[22].data);
+    bg_tex.LoadSubImage(3  - 1, gameData[22].data);
+    bg_tex.LoadSubImage(4  - 1, gameData[19].data);
+    bg_tex.LoadSubImage(5  - 1, gameData[19].data);
+    bg_tex.LoadSubImage(6  - 1, gameData[15].data);
+    bg_tex.LoadSubImage(7  - 1, gameData[13].data);
+    bg_tex.LoadSubImage(8  - 1, gameData[13].data);
+    bg_tex.LoadSubImage(9  - 1, gameData[16].data);
+    bg_tex.LoadSubImage(10 - 1, gameData[17].data);
+    bg_tex.LoadSubImage(11 - 1, gameData[16].data);
+    bg_tex.LoadSubImage(12 - 1, gameData[26].data);
+    bg_tex.LoadSubImage(13 - 1, gameData[11].data);
+    bg_tex.LoadSubImage(14 - 1, gameData[12].data);
+    bg_tex.LoadSubImage(15 - 1, gameData[20].data);
+    bg_tex.LoadSubImage(16 - 1, gameData[18].data);
+    bg_tex.LoadSubImage(17 - 1, gameData[23].data);
+    bg_tex.LoadSubImage(18 - 1, gameData[24].data);
+    bg_tex.LoadSubImage(19 - 1, gameData[21].data);
+
     Texture atlas;
     atlas.Load(gameData[255].data);
 
     bool show_fg = true;
     bool show_bg = true;
+    bool show_bg_tex = true;
 
     glm::vec4 bg_color{0.8, 0.8, 0.8, 1};
     glm::vec4 fg_color{1, 1, 1, 1};
+    glm::vec4 bg_tex_color{0.5, 0.5, 0.5, 1};
 
     int selectedMap = 0;
     static int mapIds[5] = {300, 193, 52, 222, 157};
@@ -347,8 +394,9 @@ int main(int, char**) {
 
     std::vector<uv_data> uvs = parse_uvs(gameData[254]);
     // position.xy/uv.zw
-    std::vector<glm::vec4> vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
-    std::vector<glm::vec4> vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
+    auto vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
+    auto vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
+    auto vertecies_bg_tex = renderBgs(maps[selectedMap]);
 
 #pragma endregion
 
@@ -356,24 +404,32 @@ int main(int, char**) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram shader("shaders/shader.vs", "shaders/shader.fs");
-    shader.Use();
+    ShaderProgram shader("shaders/shader.vs", "editor/src/shaders/shader.fs");
+    ShaderProgram bgShader("shaders/bg.vs", "shaders/bg.fs");
 
     VAO VAO_fg{};
     VBO VBO_fg{GL_ARRAY_BUFFER, GL_STATIC_DRAW};
     VAO_fg.Bind();
-    VBO_fg.Bind();
-    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
-    glEnableVertexAttribArray(0);
     VBO_fg.BufferData(vertecies_fg.data(), vertecies_fg.size() * sizeof(glm::vec4));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     VAO VAO_bg{};
     VBO VBO_bg{GL_ARRAY_BUFFER, GL_STATIC_DRAW};
     VAO_bg.Bind();
-    VBO_bg.Bind();
-    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
-    glEnableVertexAttribArray(0);
     VBO_bg.BufferData(vertecies_bg.data(), vertecies_bg.size() * sizeof(glm::vec4));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    VAO VAO_bg_tex{};
+    VBO VBO_bg_tex{ GL_ARRAY_BUFFER, GL_STATIC_DRAW };
+    VAO_bg_tex.Bind();
+    VBO_bg_tex.BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
+
 #pragma endregion
 
     // Main loop
@@ -401,14 +457,18 @@ int main(int, char**) {
             if (ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
                 vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
                 vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
+                vertecies_bg_tex = renderBgs(maps[selectedMap]);
 
                 VBO_fg.BufferData(vertecies_fg.data(), vertecies_fg.size() * sizeof(glm::vec4));
                 VBO_bg.BufferData(vertecies_bg.data(), vertecies_bg.size() * sizeof(glm::vec4));
+                VBO_bg_tex.BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
             }
-            ImGui::Checkbox("Render Foreground", &show_fg);
-            ImGui::ColorEdit4("Foreground color", &fg_color.r);
-            ImGui::Checkbox("Render Background", &show_bg);
-            ImGui::ColorEdit4("Background color", &bg_color.r);
+            ImGui::Checkbox("Foreground Tiles", &show_fg);
+            ImGui::ColorEdit4("fg tile color", &fg_color.r);
+            ImGui::Checkbox("Background Tiles", &show_bg);
+            ImGui::ColorEdit4("bg tile color", &bg_color.r);
+            ImGui::Checkbox("Background Texture", &show_bg_tex);
+            ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
 
             auto mp = glm::vec4(((mousePos - screenSize / 2.0f) / screenSize) * 2.0f, 0, 1);
             mp.y = -mp.y;
@@ -495,6 +555,19 @@ int main(int, char**) {
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        if(show_bg_tex) {
+            bgShader.Use();
+            shader.setMat4("MVP", MVP);
+            shader.setVec4("color", bg_tex_color);
+
+            glActiveTexture(GL_TEXTURE0);
+            bg_tex.Bind();
+
+            VAO_bg_tex.Bind();
+            glDrawArrays(GL_TRIANGLES, 0, vertecies_bg_tex.size());
+        }
+
+        shader.Use();
         shader.setMat4("MVP", MVP);
 
         glActiveTexture(GL_TEXTURE0);

@@ -120,6 +120,19 @@ struct Texture {
 
         stbi_image_free(dat);
     }
+
+    void LoadSubImage(int layer, const std::vector<uint8_t>& data) {
+        int n;
+        auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
+        if(dat == nullptr) {
+            throw std::runtime_error("missing texture");
+        }
+
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, dat);
+
+        stbi_image_free(dat);
+    }
 };
 
 struct Framebuffer {
