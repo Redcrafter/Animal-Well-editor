@@ -96,7 +96,11 @@ struct Room {
 
     uint8_t bgId;
     uint8_t waterLevel;
-    uint32_t idk1;
+
+    uint8_t pallet_index;
+    uint8_t idk1;
+    uint8_t idk2;
+    uint8_t idk3;
 
     MapTile tiles[2][22][40];
 };
@@ -110,7 +114,7 @@ class Map {
     std::unordered_map<uint16_t, int> coordinate_map;
 
     const Room* operator()(int x, int y) const {
-        if(x < 0 || x >= 256 || y < 0 || y >= 256) 
+        if(x < 0 || x >= 256 || y < 0 || y >= 256)
             return nullptr;
         if(coordinate_map.contains(x | (y << 8))) {
             return &rooms[coordinate_map.at(x | (y << 8))];
@@ -122,7 +126,7 @@ class Map {
         auto rx = x / 40;
         auto ry = y / 22;
 
-        if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256) 
+        if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
             return std::nullopt;
 
         if(coordinate_map.contains(rx | (ry << 8))) {

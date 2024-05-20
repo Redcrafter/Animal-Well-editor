@@ -404,7 +404,7 @@ int main(int, char**) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram shader("shaders/shader.vs", "editor/src/shaders/shader.fs");
+    ShaderProgram shader("shaders/shader.vs", "shaders/shader.fs");
     ShaderProgram bgShader("shaders/bg.vs", "shaders/bg.fs");
 
     VAO VAO_fg{};
@@ -483,9 +483,15 @@ int main(int, char**) {
 
             if (wp.x >= 0 && wp.y >= 0 && room != nullptr) {
                 ImGui::NewLine();
-                ImGui::Text("room position %i %i", room->x, room->y);
-                ImGui::Text("room water level %i", room->waterLevel);
-                ImGui::Text("room background id %i", room->bgId);
+                ImGui::Text("room");
+                ImGui::Text("position %i %i", room->x, room->y);
+                ImGui::Text("water level %i", room->waterLevel);
+                ImGui::Text("background id %i", room->bgId);
+
+                ImGui::Text("pallet_index %i", room->pallet_index);
+                ImGui::Text("idk1 %i", room->idk1);
+                ImGui::Text("idk2 %i", room->idk2);
+                ImGui::Text("idk3 %i", room->idk3);
 
                 auto tp = glm::ivec2(glm::mod(wp, room_size) / 8.0f);
                 auto tile = room->tiles[0][tp.y][tp.x];
