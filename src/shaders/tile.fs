@@ -1,15 +1,14 @@
 #version 330 core
 
 in vec2 UV;
-// in vec4 Color;
 
 out vec4 result;
 
-uniform sampler2D myTextureSampler;
+uniform sampler2D atlas;
 uniform vec4 color;
 
 void main() {
-    vec4 col = texture(myTextureSampler, UV);
+    vec4 col = texture(atlas, UV);
 
     if(col.rgb == vec3(0, 1, 1))
         discard;

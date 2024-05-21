@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <numbers>
 
 #include "glStuff.hpp"
 #include <glad/gl.h>
@@ -13,10 +14,6 @@
 
 #include "parsing.hpp"
 
-static void glfw_error_callback(int error, const char* description) {
-    fprintf(stderr, "GLFW Error %d: %s\n", error, description);
-}
-
 float gScale = 1;
 // Camera matrix
 glm::mat4 view = glm::lookAt(
@@ -28,6 +25,12 @@ glm::mat4 projection;
 glm::vec2 mousePos = glm::vec2(-1);
 
 glm::vec2 screenSize;
+
+std::vector<Textured_Framebuffer*> framebuffers;
+
+static void glfw_error_callback(int error, const char* description) {
+    fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+}
 
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     glm::vec2 newPos{xpos, ypos};
@@ -73,6 +76,10 @@ static void onResize(GLFWwindow* window, int width, int height) {
     screenSize = glm::vec2(width, height);
     glViewport(0, 0, width, height);
     projection = glm::ortho<float>(0, width, height, 0, 0.0f, 100.0f);
+
+    for(const auto fb : framebuffers) {
+        fb->resize(width, height);
+    }
 }
 
 auto renderMap(const Map& map, int layer, std::map<uint32_t, SpriteData>& sprites, std::vector<uv_data>& uvs) {
@@ -121,7 +128,7 @@ auto renderMap(const Map& map, int layer, std::map<uint32_t, SpriteData>& sprite
                             aUv.x += size.x;
                             size.x = -size.x;
                         }
-                        assert(!tile.rotate_90 && !tile.rotate_180, "sprite rotation not implemented");
+                        assert(!tile.rotate_90 && !tile.rotate_180); // sprite rotation not implemented
 
                         vert.emplace_back(ap, aUv / atlasSize);                                                                // tl
                         vert.emplace_back(ap + glm::vec2(subsprite.size.x, 0), glm::vec2(aUv.x + size.x, aUv.y) / atlasSize);  // tr
@@ -253,6 +260,129 @@ auto renderBgs(const Map& map) {
     return bg;
 }
 
+auto renderLights(const Map& map, std::vector<uv_data>& uvs) {
+    std::vector<glm::ivec2> lights; // not really needed. i'll remove it later
+
+    for(auto&& room : map.rooms) {
+        for(int y2 = 0; y2 < 22; y2++) {
+            for(int x2 = 0; x2 < 40; x2++) {
+                auto tile = room.tiles[0][y2][x2];
+                if(tile.tile_id == 0 || tile.tile_id >= 0x400)
+                    continue;
+
+                if(tile.tile_id == 202 || tile.tile_id == 554 || tile.tile_id == 561 || tile.tile_id == 624 || tile.tile_id == 731 || tile.tile_id == 548 || tile.tile_id == 46) {
+                    lights.emplace_back(x2 + room.x * 40, y2 + room.y * 22);
+                }
+            }
+        }
+    }
+
+    // radius ~6 tiles
+
+    // general concept is to render the light circle and the block out everything not reachable by rendering over it with black triangles
+    // currently has issues with light sources rendering over each other
+    // will need to implement cutting the light circle polygon to remove problems and reduce number of triangles rendered
+
+    std::vector<std::pair<glm::vec2, glm::vec3>> verts;
+    auto black = glm::vec3(0, 0, 0);
+    auto col1 = glm::vec3(0.10588, 0.31373, 0.54902);
+    auto col2 = glm::vec3(0.30588, 0.64314, 0.78431);
+
+    auto add_shadow = [&](glm::vec2 pos, glm::ivec2 d1, glm::ivec2 d2) {
+        auto bl = pos + glm::vec2(d1);
+        auto br = pos + glm::vec2(d2);
+        auto tl = pos + glm::normalize(glm::vec2(d1)) * 55.0f;
+        auto tr = pos + glm::normalize(glm::vec2(d2)) * 55.0f;
+
+        verts.emplace_back(tl, black);
+        verts.emplace_back(tr, black);
+        verts.emplace_back(bl, black);
+
+        verts.emplace_back(tr, black);
+        verts.emplace_back(br, black);
+        verts.emplace_back(bl, black);
+    };
+
+    for(auto light : lights) {
+        auto lp = glm::vec2(light * 8) + 0.5f;
+
+        const auto step = std::numbers::pi * 2 / 24;
+        double angle = 0;
+        auto p0 = glm::round(glm::vec2(std::cos(angle), std::sin(angle)) * 53.0f);
+
+        for(int i = 0; i < 24; i++) {
+            verts.emplace_back(lp, col1);
+            verts.emplace_back(lp + p0, col1);
+            angle += step;
+            p0 = glm::round(glm::vec2(std::cos(angle), std::sin(angle)) * 53.0f);
+            verts.emplace_back(lp + p0, col1);
+        }
+
+        angle = 0;
+        p0 = glm::round(glm::vec2(std::cos(angle), std::sin(angle)) * 45.0f);
+
+        for(int i = 0; i < 24; i++) {
+            verts.emplace_back(lp, col2);
+            verts.emplace_back(lp + p0, col2);
+            angle += step;
+            p0 = glm::round(glm::vec2(std::cos(angle), std::sin(angle)) * 45.0f);
+            verts.emplace_back(lp + p0, col2);
+        }
+
+        for(int y = -6; y <= 6; ++y) {
+            for(int x = -6; x < 6; ++x) {
+                auto t = map.getTile(0, light.x + x, light.y + y);
+                if(!t.has_value() || t->tile_id == 0 || !uvs[t->tile_id].blocks_light)
+                    continue;
+
+                if(y > 0) { // top of tile hit
+                    add_shadow(lp, glm::ivec2(x, y) * 8, glm::ivec2(x + 1, y) * 8);
+                } else if(y < 0) { // bottom of tile hit
+                    add_shadow(lp, glm::ivec2(x, y + 1) * 8, glm::ivec2(x + 1, y + 1) * 8);
+                }
+                if(x > 0) { // left of tile hit
+                    add_shadow(lp, glm::ivec2(x, y) * 8, glm::ivec2(x, y + 1) * 8);
+                } else if(x < 0) { // right of tile hit
+                    add_shadow(lp, glm::ivec2(x + 1, y) * 8, glm::ivec2(x + 1, y + 1) * 8);
+                }
+            }
+        }
+    }
+
+    return verts;
+}
+
+// helpger function renders a quad over the entire screen with uv fron (0,0) to (1,1)
+// very useful for processing intermediate frambuffers
+static void RenderQuad() {
+    static std::unique_ptr<VAO> quadVAO;
+    static std::unique_ptr<VBO> quadVBO;
+
+    if(quadVAO == nullptr) {
+        const float quadVertices[] = {
+            // positions  // texture Coords
+            -1.0f,  1.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f,
+             1.0f,  1.0f, 1.0f, 1.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+        };
+
+        quadVAO = std::make_unique<VAO>();
+        quadVAO->Bind();
+
+        quadVBO = std::make_unique<VBO>(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
+        quadVBO->BufferData(quadVertices, sizeof(quadVertices));
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO->id);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
 // Main code
 int main(int, char**) {
 #pragma region glfw/opengl setup
@@ -374,6 +504,7 @@ int main(int, char**) {
     bool show_fg = true;
     bool show_bg = true;
     bool show_bg_tex = true;
+    bool do_lighting = true;
 
     glm::vec4 bg_color{0.8, 0.8, 0.8, 1};
     glm::vec4 fg_color{1, 1, 1, 1};
@@ -397,6 +528,7 @@ int main(int, char**) {
     auto vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
     auto vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
     auto vertecies_bg_tex = renderBgs(maps[selectedMap]);
+    auto vertecies_light = renderLights(maps[selectedMap], uvs);
 
 #pragma endregion
 
@@ -404,8 +536,14 @@ int main(int, char**) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram shader("shaders/shader.vs", "shaders/shader.fs");
-    ShaderProgram bgShader("shaders/bg.vs", "shaders/bg.fs");
+    ShaderProgram tile_shader("shaders/tile.vs", "shaders/tile.fs");
+    ShaderProgram bg_shader("shaders/bg.vs", "shaders/bg.fs");
+    ShaderProgram light_shader("shaders/light.vs", "shaders/light.fs");
+
+    ShaderProgram merge_shader("shaders/merge.vs", "shaders/merge.fs");
+    merge_shader.Use();
+    merge_shader.setInt("tiles", 0);
+    merge_shader.setInt("lights", 1);
 
     VAO VAO_fg{};
     VBO VBO_fg{GL_ARRAY_BUFFER, GL_STATIC_DRAW};
@@ -429,6 +567,21 @@ int main(int, char**) {
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
+
+    VAO VAO_light{};
+    VBO VBO_light{ GL_ARRAY_BUFFER, GL_STATIC_DRAW };
+    VAO_light.Bind();
+    VBO_light.BufferData(vertecies_light.data(), vertecies_light.size() * sizeof(float) * 5);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
+
+    Textured_Framebuffer light_fb(1280, 720, GL_RGBA16F);
+    Textured_Framebuffer tile_fb(1280, 720, GL_RGBA16F);
+
+    framebuffers.push_back(&light_fb);
+    framebuffers.push_back(&tile_fb);
 
 #pragma endregion
 
@@ -458,10 +611,12 @@ int main(int, char**) {
                 vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
                 vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
                 vertecies_bg_tex = renderBgs(maps[selectedMap]);
+                vertecies_light = renderLights(maps[selectedMap], uvs);
 
                 VBO_fg.BufferData(vertecies_fg.data(), vertecies_fg.size() * sizeof(glm::vec4));
                 VBO_bg.BufferData(vertecies_bg.data(), vertecies_bg.size() * sizeof(glm::vec4));
                 VBO_bg_tex.BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
+                VBO_light.BufferData(vertecies_light.data(), vertecies_light.size() * sizeof(float) * 5);
             }
             ImGui::Checkbox("Foreground Tiles", &show_fg);
             ImGui::ColorEdit4("fg tile color", &fg_color.r);
@@ -469,6 +624,7 @@ int main(int, char**) {
             ImGui::ColorEdit4("bg tile color", &bg_color.r);
             ImGui::Checkbox("Background Texture", &show_bg_tex);
             ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
+            ImGui::Checkbox("Apply lighting", &do_lighting);
 
             auto mp = glm::vec4(((mousePos - screenSize / 2.0f) / screenSize) * 2.0f, 0, 1);
             mp.y = -mp.y;
@@ -558,13 +714,32 @@ int main(int, char**) {
             ImGui::End();
         }
 
-        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+        // 1. light pass
+        if(do_lighting) {
+            glClearColor(0.0, 0.0, 0.0, 1.0);
+            light_fb.Bind();
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            light_shader.Use();
+            light_shader.setMat4("MVP", MVP);
+            VAO_light.Bind();
+            glDrawArrays(GL_TRIANGLES, 0, vertecies_light.size());
+        } else {
+            glClearColor(1.0, 1.0, 1.0, 1.0);
+            light_fb.Bind();
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // 2. main pass
+        tile_fb.Bind();
+        glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT);
 
         if(show_bg_tex) {
-            bgShader.Use();
-            shader.setMat4("MVP", MVP);
-            shader.setVec4("color", bg_tex_color);
+            bg_shader.Use();
+            bg_shader.setMat4("MVP", MVP);
+            bg_shader.setVec4("color", bg_tex_color);
 
             glActiveTexture(GL_TEXTURE0);
             bg_tex.Bind();
@@ -573,22 +748,35 @@ int main(int, char**) {
             glDrawArrays(GL_TRIANGLES, 0, vertecies_bg_tex.size());
         }
 
-        shader.Use();
-        shader.setMat4("MVP", MVP);
+        tile_shader.Use();
+        tile_shader.setMat4("MVP", MVP);
 
         glActiveTexture(GL_TEXTURE0);
         atlas.Bind();
 
         if (show_bg) {
-            shader.setVec4("color", bg_color);
+            tile_shader.setVec4("color", bg_color);
             VAO_bg.Bind();
             glDrawArrays(GL_TRIANGLES, 0, vertecies_bg.size());
         }
         if (show_fg) {
-            shader.setVec4("color", fg_color);
+            tile_shader.setVec4("color", fg_color);
             VAO_fg.Bind();
             glDrawArrays(GL_TRIANGLES, 0, vertecies_fg.size());
         }
+
+        // 3. final merge pass
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        merge_shader.Use();
+        glActiveTexture(GL_TEXTURE0);
+        tile_fb.tex.Bind();
+        glActiveTexture(GL_TEXTURE1);
+        light_fb.tex.Bind();
+
+        RenderQuad();
 
         // Rendering
         ImGui::Render();

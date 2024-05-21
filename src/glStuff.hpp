@@ -150,6 +150,36 @@ struct Framebuffer {
     }
 };
 
+struct Textured_Framebuffer {
+    Framebuffer fb;
+    Texture tex;
+    GLint internal_format;
+
+    Textured_Framebuffer(int width, int height, GLint internal_format) : internal_format(internal_format) {
+        fb.Bind();
+        tex.Bind();
+
+        glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex.id, 0);
+    }
+
+    void resize(int width, int height) {
+        if(width == tex.width && height == tex.height)
+            return;
+
+        glBindTexture(GL_TEXTURE_2D, tex.id);
+        glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    }
+
+    void Bind() {
+        fb.Bind();
+    }
+};
+
 struct ShaderProgram {
     Unique<GLuint> ID = 0;
 
