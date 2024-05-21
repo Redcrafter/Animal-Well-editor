@@ -289,6 +289,9 @@ auto renderLights(const Map& map, std::vector<uv_data>& uvs) {
     auto col2 = glm::vec3(0.30588, 0.64314, 0.78431);
 
     auto add_shadow = [&](glm::vec2 pos, glm::ivec2 d1, glm::ivec2 d2) {
+        d1 -= 4.0f;
+        d2 -= 4.0f;
+
         auto bl = pos + glm::vec2(d1);
         auto br = pos + glm::vec2(d2);
         auto tl = pos + glm::normalize(glm::vec2(d1)) * 55.0f;
@@ -304,7 +307,7 @@ auto renderLights(const Map& map, std::vector<uv_data>& uvs) {
     };
 
     for(auto light : lights) {
-        auto lp = glm::vec2(light * 8) + 0.5f;
+        auto lp = glm::vec2(light * 8) + 4.0f;
 
         const auto step = std::numbers::pi * 2 / 24;
         double angle = 0;
@@ -330,18 +333,18 @@ auto renderLights(const Map& map, std::vector<uv_data>& uvs) {
         }
 
         for(int y = -6; y <= 6; ++y) {
-            for(int x = -6; x < 6; ++x) {
+            for(int x = -6; x <= 6; ++x) {
                 auto t = map.getTile(0, light.x + x, light.y + y);
                 if(!t.has_value() || t->tile_id == 0 || !uvs[t->tile_id].blocks_light)
                     continue;
 
                 if(y > 0) { // top of tile hit
-                    add_shadow(lp, glm::ivec2(x, y) * 8, glm::ivec2(x + 1, y) * 8);
+                    add_shadow(lp, glm::ivec2(x, y) * 8    , glm::ivec2(x + 1, y) * 8);
                 } else if(y < 0) { // bottom of tile hit
                     add_shadow(lp, glm::ivec2(x, y + 1) * 8, glm::ivec2(x + 1, y + 1) * 8);
                 }
                 if(x > 0) { // left of tile hit
-                    add_shadow(lp, glm::ivec2(x, y) * 8, glm::ivec2(x, y + 1) * 8);
+                    add_shadow(lp, glm::ivec2(x, y) * 8    , glm::ivec2(x, y + 1) * 8);
                 } else if(x < 0) { // right of tile hit
                     add_shadow(lp, glm::ivec2(x + 1, y) * 8, glm::ivec2(x + 1, y + 1) * 8);
                 }
