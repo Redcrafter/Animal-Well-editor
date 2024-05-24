@@ -1,9 +1,14 @@
-#include <stdio.h>
+#include <algorithm>
+#include <cstdio>
+#include <filesystem>
 #include <numbers>
+#include <random>
+#include <set>
+#include <span>
+#include <unordered_map>
 
-#include "glStuff.hpp"
-#include <glad/gl.h>
-#include <GLFW/glfw3.h>  // Will drag system OpenGL headers
+#include "glStuff.hpp" // has to be included before glfw
+#include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,8 +16,16 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
+#include <imgui_internal.h>
+#include <misc/cpp/imgui_stdlib.h>
 
-#include "parsing.hpp"
+#include "structures/asset.hpp"
+#include "structures/entity.hpp"
+#include "structures/map.hpp"
+#include "structures/tile.hpp"
+#include "dos_parser.hpp"
+
+GLFWwindow* window;
 
 float gScale = 1;
 // Camera matrix
@@ -22,11 +35,46 @@ glm::mat4 view = glm::lookAt(
     glm::vec3(0, 1, 0)   // Head is up
 );
 glm::mat4 projection;
+glm::mat4 MVP;
+
 glm::vec2 mousePos = glm::vec2(-1);
 
 glm::vec2 screenSize;
 
 std::vector<Textured_Framebuffer*> framebuffers;
+
+std::unique_ptr<VBO> VBO_fg;
+std::unique_ptr<VBO> VBO_bg;
+std::unique_ptr<VBO> VBO_bg_tex;
+std::unique_ptr<VBO> VBO_light;
+std::unique_ptr<VBO> VBO_selection;
+
+int selectedMap = 0;
+
+std::vector<char> rawData;
+
+constexpr int mapIds[5] = { 300, 193, 52, 222, 157 };
+Map maps[5]{};
+std::unordered_map<uint32_t, SpriteData> sprites;
+std::vector<uv_data> uvs;
+
+std::unique_ptr<Texture> atlas;
+std::unique_ptr<Texture> bg_tex;
+
+std::vector<glm::vec4> vertecies_fg;
+std::vector<glm::vec4> vertecies_bg;
+std::vector<std::pair<glm::vec2, glm::vec3>> vertecies_bg_tex;
+std::vector<std::pair<glm::vec2, glm::vec3>> vertecies_light;
+std::vector<std::pair<glm::vec2, glm::vec4>> selectionVerts;
+
+glm::vec4 bg_color{ 0.8, 0.8, 0.8, 1 };
+glm::vec4 fg_color{ 1, 1, 1, 1 };
+glm::vec4 bg_tex_color{ 0.5, 0.5, 0.5, 1 };
+
+bool show_fg = true;
+bool show_bg = true;
+bool show_bg_tex = true;
+bool do_lighting = false;
 
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -55,6 +103,11 @@ static void cursor_position_callback(GLFWwindow* window, double xpos, double ypo
 }
 
 static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    ImGuiIO& io = ImGui::GetIO();
+    if(io.WantCaptureMouse) {
+        return;
+    }
+
     float scale = 1;
     if (yoffset > 0) {
         scale = 1.1;
@@ -82,8 +135,8 @@ static void onResize(GLFWwindow* window, int width, int height) {
     }
 }
 
-auto renderMap(const Map& map, int layer, std::map<uint32_t, SpriteData>& sprites, std::vector<uv_data>& uvs) {
-    auto atlasSize = glm::vec2(1024, 2048);
+auto renderMap(const Map& map, int layer) {
+    auto atlasSize = glm::vec2(atlas->width, atlas->height);
 
     std::vector<glm::vec4> vert;
 
@@ -355,6 +408,18 @@ auto renderLights(const Map& map, std::vector<uv_data>& uvs) {
     return verts;
 }
 
+static void updateRender() {
+    vertecies_fg = renderMap(maps[selectedMap], 0);
+    vertecies_bg = renderMap(maps[selectedMap], 1);
+    vertecies_bg_tex = renderBgs(maps[selectedMap]);
+    vertecies_light = renderLights(maps[selectedMap], uvs);
+
+    VBO_fg->BufferData(vertecies_fg.data(), vertecies_fg.size() * sizeof(glm::vec4));
+    VBO_bg->BufferData(vertecies_bg.data(), vertecies_bg.size() * sizeof(glm::vec4));
+    VBO_bg_tex->BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
+    VBO_light->BufferData(vertecies_light.data(), vertecies_light.size() * sizeof(float) * 5);
+}
+
 // helpger function renders a quad over the entire screen with uv fron (0,0) to (1,1)
 // very useful for processing intermediate frambuffers
 static void RenderQuad() {
@@ -386,8 +451,981 @@ static void RenderQuad() {
     glBindVertexArray(0);
 }
 
+static void DrawLine(std::vector<std::pair<glm::vec2, glm::vec4>>& verts, glm::vec2 p1, glm::vec2 p2, glm::vec4 color, float thickness) {
+    auto d = glm::normalize(p2 - p1) * (thickness * 0.5f);
+
+    verts.emplace_back(glm::vec2{ p1.x + d.y, p1.y - d.x }, color); // tl
+    verts.emplace_back(glm::vec2{ p2.x + d.y, p2.y - d.x }, color); // tr
+    verts.emplace_back(glm::vec2{ p1.x - d.y, p1.y + d.x }, color); // bl
+
+    verts.emplace_back(glm::vec2{ p2.x - d.y, p2.y + d.x }, color); // br
+    verts.emplace_back(glm::vec2{ p1.x - d.y, p1.y + d.x }, color); // bl
+    verts.emplace_back(glm::vec2{ p2.x + d.y, p2.y - d.x }, color); // tr
+}
+
+static void DrawRect(std::vector<std::pair<glm::vec2, glm::vec4>>& verts, glm::vec2 pos, glm::vec2 size, glm::vec4 color, float thickness) {
+    DrawLine(verts, pos, pos + glm::vec2(size.x, 0), color, thickness);
+    DrawLine(verts, pos + glm::vec2(size.x, 0), pos + size, color, thickness);
+    DrawLine(verts, pos + size, pos + glm::vec2(0, size.y), color, thickness);
+    DrawLine(verts, pos + glm::vec2(0, size.y), pos, color, thickness);
+}
+
+static void DrawCube(std::vector<std::pair<glm::vec2, glm::vec4>>& verts, glm::vec2 p1, glm::vec2 size, glm::vec4 color) {
+    verts.emplace_back(p1, color);
+    verts.emplace_back(glm::vec2{ p1.x + size.x, p1.y }, color);
+    verts.emplace_back(glm::vec2{ p1.x, p1.y + size.y }, color);
+
+    verts.emplace_back(glm::vec2{ p1.x + size.x, p1.y }, color);
+    verts.emplace_back(p1 + size, color);
+    verts.emplace_back(glm::vec2{ p1.x, p1.y + size.y }, color);
+}
+
+static ImVec2 toImVec(const glm::vec2 vec) {
+    return ImVec2(vec.x, vec.y);
+}
+
+class {
+    std::string currentPath = "C:/Program Files (x86)/Steam/steamapps/common/Animal Well/Animal Well.exe";
+    // open has to be deferred because of imgui issue see https://github.com/ocornut/imgui/issues/331
+    bool shouldOpen = false;
+
+public:
+    std::string error_msg;
+
+    void draw() {
+        if(shouldOpen) {
+            ImGui::OpenPopup("Open File");
+            shouldOpen = false;
+        }
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+        if(ImGui::BeginPopupModal("Open File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::InputText("path", &currentPath);
+            ImGui::Separator();
+
+            if(ImGui::Button("Open")) {
+                tryLoad();
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            if(!error_msg.empty()) {
+                ImGui::OpenPopup("Open File Error");
+            }
+            if(ImGui::BeginPopupModal("Open File Error")) {
+                ImGui::Text("Failed to load file: %s", error_msg.c_str());
+                if(ImGui::Button("Ok")) {
+                    error_msg.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+    void open() {
+        shouldOpen = true;
+    }
+
+    void LoadAtlas(std::span<const uint8_t> data) {
+        int width, height, n;
+        auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
+        if(dat == nullptr) {
+            throw std::runtime_error("invalid texture atlas format");
+        }
+
+        atlas = std::make_unique<Texture>();
+        // chroma key cyan and replace with alpha
+
+        auto vptr = (uint32_t*)dat;
+        for(int i = 0; i < width * height; ++i) {
+            if(vptr[i] == 0xFFFFFF00) {
+                vptr[i] = 0;
+            }
+        }
+
+        atlas->Bind();
+        atlas->width = width;
+        atlas->height = height;
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, dat);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        stbi_image_free(dat);
+    }
+
+    bool tryLoad() {
+        if(!std::filesystem::exists(currentPath)) {
+            error_msg = "File not found";
+            return false;
+        }
+        rawData = readFile(currentPath.c_str());
+        auto sections = getSegmentOffsets(rawData);
+
+        assert(sections.data.size() >= sizeof(asset_entry) * 676);
+        auto assets = std::span((asset_entry*)sections.data.data(), 676);
+
+        std::vector<uint8_t> decryptBuffer;
+
+        auto get_asset = [&](int id) {
+            assert(id >= 0 && id < 676);
+            auto& asset = assets[id];
+            assert(sections.rdata.size() >= asset.ptr - sections.rdata_pointer_offset + asset.length);
+            auto dat = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+
+            if(tryDecrypt(asset, dat, decryptBuffer)) {
+                return std::span(decryptBuffer);
+            }
+            return dat;
+        };
+
+        LoadAtlas(get_asset(255));
+
+        bg_tex = std::make_unique<Texture>();
+        glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex->id);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+        bg_tex->LoadSubImage(1 - 1, get_asset(14));
+        bg_tex->LoadSubImage(2 - 1, get_asset(22));
+        bg_tex->LoadSubImage(3 - 1, get_asset(22));
+        bg_tex->LoadSubImage(4 - 1, get_asset(19));
+        bg_tex->LoadSubImage(5 - 1, get_asset(19));
+        bg_tex->LoadSubImage(6 - 1, get_asset(15));
+        bg_tex->LoadSubImage(7 - 1, get_asset(13));
+        bg_tex->LoadSubImage(8 - 1, get_asset(13));
+        bg_tex->LoadSubImage(9 - 1, get_asset(16));
+        bg_tex->LoadSubImage(10 - 1, get_asset(17));
+        bg_tex->LoadSubImage(11 - 1, get_asset(16));
+        bg_tex->LoadSubImage(12 - 1, get_asset(26));
+        bg_tex->LoadSubImage(13 - 1, get_asset(11));
+        bg_tex->LoadSubImage(14 - 1, get_asset(12));
+        bg_tex->LoadSubImage(15 - 1, get_asset(20));
+        bg_tex->LoadSubImage(16 - 1, get_asset(18));
+        bg_tex->LoadSubImage(17 - 1, get_asset(23));
+        bg_tex->LoadSubImage(18 - 1, get_asset(24));
+        bg_tex->LoadSubImage(19 - 1, get_asset(21));
+
+        for(size_t i = 0; i < 5; i++) {
+            maps[i] = Map(get_asset(mapIds[i]));
+        }
+
+        for(auto el : spriteMapping) {
+            sprites[el.tile_id] = parse_sprite(get_asset(el.asset_id));
+        }
+
+        uvs = parse_uvs(get_asset(254));
+
+        updateRender();
+
+        ImGui::CloseCurrentPopup();
+        return true;
+    }
+} LoadFileDialog;
+
+static void DrawUvFlags(uv_data& uv) {
+    if(ImGui::BeginTable("uv_flags_table", 2)) {
+        uint32_t flags = uv.flags;
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides right", &flags, 1 << 1); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Blocks Light", &flags, 1 << 8);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides up", &flags, 1 << 2); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("obscures", &flags, 1 << 6);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides down", &flags, 1 << 3);   // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Contiguous", &flags, 1 << 7); // correct
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Not Placeable", &flags, 1 << 4);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Self Contiguous", &flags, 1 << 9); // correct
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Additive", &flags, 1 << 5);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Dirt", &flags, 1 << 11);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12);  // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("UV Light", &flags, 1 << 13);     // correct
+
+        if(flags != uv.flags) {
+            uv.flags = flags;
+            updateRender();
+        }
+
+        ImGui::EndTable();
+    }
+}
+
+static void DrawSpriteWindow() {
+    if(!ImGui::Begin("Sprite Viewer")) {
+        ImGui::End();
+        return;
+    }
+
+    static int selectedSprite = 0;
+    static int selected_animation = 0;
+    static bool playing = false;
+    static int frame_step = 0;
+    static int selected_composition = 0;
+
+    if(ImGui::InputInt("Id", &selectedSprite)) {
+        if(selectedSprite >= 158) {
+            selectedSprite = 0;
+        }
+        selected_animation = 0;
+        selected_composition = 0;
+        playing = false;
+        frame_step = 0;
+    }
+
+    auto tile_id = spriteMapping[selectedSprite].tile_id;
+    auto& sprite = sprites[tile_id];
+    auto& uv = uvs[tile_id];
+
+    ImGui::InputScalarN("Composite size", ImGuiDataType_U16, &sprite.composite_size, 2);
+    ImGui::InputScalar("Layer count", ImGuiDataType_U16, &sprite.layer_count);
+    ImGui::InputScalar("Composite count", ImGuiDataType_U16, &sprite.composition_count);
+    ImGui::InputScalar("Subsprite count", ImGuiDataType_U16, &sprite.subsprite_count);
+    ImGui::InputScalar("Animation count", ImGuiDataType_U16, &sprite.animation_count);
+
+    ImGui::NewLine();
+    ImGui::SliderInt("animation", &selected_animation, 0, sprite.animation_count - 1);
+    if(sprite.animation_count != 0) {
+        auto& anim = sprite.animations[selected_animation];
+        ImGui::InputScalar("start", ImGuiDataType_U16, &anim.start);
+        ImGui::InputScalar("end", ImGuiDataType_U16, &anim.end);
+        ImGui::InputScalar("frame_delay", ImGuiDataType_U16, &anim.frame_delay);
+
+        if(playing) {
+            frame_step++;
+            if(frame_step / 5 > anim.frame_delay) {
+                selected_composition++;
+                if(selected_composition > anim.end) {
+                    selected_composition = anim.start;
+                }
+                frame_step = 0;
+            }
+
+            if(ImGui::Button("Pause")) playing = false;
+        } else {
+            if(ImGui::Button("Play")) {
+                playing = true;
+                selected_composition = anim.start;
+                frame_step = 0;
+            }
+        }
+    }
+    ImGui::SliderInt("composition", &selected_composition, 0, sprite.composition_count - 1);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    auto pos = glm::vec2(p.x, p.y);
+
+    // draw_list->AddCallback([](const ImDrawList* parent_list, const ImDrawCmd* cmd) { }, nullptr);
+
+    auto atlasSize = glm::vec2(atlas->width, atlas->height);
+    for(int j = 0; j < sprite.layer_count; ++j) {
+        auto subsprite_id = sprite.compositions[selected_composition * sprite.layer_count + j];
+        if(subsprite_id >= sprite.subsprite_count)
+            continue;
+
+        auto& layer = sprite.layers[j];
+        if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
+
+        auto& subsprite = sprite.sub_sprites[subsprite_id];
+
+        auto aUv = glm::vec2(uv.pos + subsprite.atlas_pos);
+        auto size = glm::vec2(subsprite.size);
+        auto ap = pos + glm::vec2(subsprite.composite_pos) * 8.0f;
+
+        draw_list->AddImage((ImTextureID)atlas->id.value, toImVec(ap), toImVec(ap + glm::vec2(subsprite.size) * 8.0f), toImVec(aUv / atlasSize), toImVec((aUv + size) / atlasSize));
+    }
+
+    // draw_list->AddCallback()
+
+    ImGui::End();
+}
+
+static void DrawTileWindow() {
+    if(!ImGui::Begin("Tile Viewer")) {
+        ImGui::End();
+        return;
+    }
+
+    static int selectedTile = 0;
+    ImGui::InputInt("Id", &selectedTile);
+    if(selectedTile >= uvs.size()) {
+        selectedTile = 0;
+    }
+
+    auto& uv = uvs[selectedTile];
+
+    // bool is_sprite = sprites.contains(selectedTile);
+    bool is_sprite = false;
+
+    if(!is_sprite) {
+        auto pos = glm::vec2(uv.pos);
+        auto size = glm::vec2(uv.size);
+        auto atlas_size = glm::vec2(atlas->width, atlas->height);
+
+        ImGui::Text("preview");
+        ImGui::Image((ImTextureID)atlas->id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+    } else {
+        /*
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+
+        const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + image_size);
+        ImGui::ItemSize(bb);
+        if(!ImGui::ItemAdd(bb, 0))
+            return;
+
+        // Render
+        window->DrawList->AddImage(user_texture_id, bb.Min + padding, bb.Max - padding, uv0, uv1);
+        */
+    }
+
+    DrawUvFlags(uv);
+
+    ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
+    ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
+
+    ImGui::End();
+}
+
+static void DrawFindWindow() {
+    static int tile_id;
+    static std::vector<glm::ivec3> results;
+    static ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
+    static bool show_on_map;
+
+    auto& map = maps[selectedMap];
+
+    if(ImGui::Begin("Search")) {
+        ImGui::InputInt("tile_id", &tile_id);
+
+        if(ImGui::Button("Search")) {
+            results.clear();
+
+            for(auto& room : map.rooms) {
+                for(int y2 = 0; y2 < 22; y2++) {
+                    for(int x2 = 0; x2 < 40; x2++) {
+                        auto tile1 = room.tiles[0][y2][x2];
+                        if(tile1.tile_id == tile_id) {
+                            results.emplace_back(room.x * 40 + x2, room.y * 22 + y2, 0);
+                        }
+
+                        auto tile2 = room.tiles[1][y2][x2];
+                        if(tile2.tile_id == tile_id) {
+                            results.emplace_back(room.x * 40 + x2, room.y * 22 + y2, 1);
+                        }
+                    }
+                }
+            }
+        }
+        if(ImGui::Button("Clear")) {
+            results.clear();
+        }
+        ImGui::Checkbox("Highlight", &show_on_map);
+
+        const float TEXT_BASE_HEIGHT = ImGui::GetTextLineHeightWithSpacing();
+        // When using ScrollX or ScrollY we need to specify a size for our table container!
+        // Otherwise by default the table will fit all available space, like a BeginChild() call.
+        ImVec2 outer_size = ImVec2(0.0f, TEXT_BASE_HEIGHT * 8);
+        if(ImGui::BeginTable("search_results", 3, flags, outer_size)) {
+            ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
+            ImGui::TableSetupColumn("x", ImGuiTableColumnFlags_None);
+            ImGui::TableSetupColumn("y", ImGuiTableColumnFlags_None);
+            ImGui::TableSetupColumn("layer", ImGuiTableColumnFlags_None);
+            ImGui::TableHeadersRow();
+
+            // Demonstrate using clipper for large vertical lists
+            ImGuiListClipper clipper;
+            clipper.Begin(results.size());
+            while(clipper.Step()) {
+                for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
+                    ImGui::TableNextRow();
+
+                    auto el = results[row];
+
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%i", el.x);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%i", el.y);
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%i", el.z);
+                }
+            }
+            ImGui::EndTable();
+        }
+    }
+    ImGui::End();
+
+    if(show_on_map) {
+        for(auto result : results) {
+            auto tile = map.getTile(result.z, result.x, result.y);
+            if(!tile.has_value())
+                continue;
+
+            auto uv = uvs[tile->tile_id];
+
+            DrawRect(selectionVerts, glm::vec2(result.x * 8, result.y * 8),  glm::vec2(uv.size), {1, 0, 0, 0.8f}, 8 / gScale);
+        }
+    }
+}
+
+static void DumpAssets() {
+    std::filesystem::create_directory("assets");
+
+    auto sections = getSegmentOffsets(rawData);
+    auto assets = std::span((asset_entry*)sections.data.data(), 676);
+
+    std::vector<uint8_t> decrypted;
+
+    for(int i = 0; i < assets.size(); ++i) {
+        auto& item = assets[i];
+
+        std::string ext = ".bin";
+        switch(item.type) {
+            case AssetType::Text:
+                ext = ".txt";
+                break;
+            case AssetType::MapData:
+            case AssetType::Encrypted_MapData:
+                ext = ".map";
+                break;
+            case AssetType::Png:
+            case AssetType::Encrypted_Png:
+                ext = ".png";
+                break;
+            case AssetType::Ogg:
+            case AssetType::Encrypted_Ogg:
+                ext = ".ogg";
+                break;
+            case AssetType::SpriteData:
+                ext = ".sprite";
+                break;
+            case AssetType::Shader:
+                ext = ".shader";
+                break;
+            case AssetType::Font:
+                ext = ".font";
+                break;
+            case AssetType::Encrypted_XPS:
+                ext = ".xps";
+                break;
+        }
+
+        auto dat = sections.rdata.subspan(item.ptr - sections.rdata_pointer_offset, item.length);
+
+        std::ofstream file("assets/" + std::to_string(i) + ext, std::ios::binary);
+        if(tryDecrypt(item, dat, decrypted)) {
+            file.write((char*)decrypted.data(), decrypted.size());
+        } else {
+            file.write((char*)dat.data(), dat.size());
+        }
+    }
+}
+
+static void randomize() {
+    std::vector<MapTile> items;
+    std::vector<glm::ivec2> locations;
+
+    std::set<int> target;
+
+    //  16 = save_point
+    //  39 = telephone
+    target.insert( 40); // = key
+    target.insert( 41); // = match
+    //  90 = egg
+    target.insert(109); // = lamp
+    target.insert(149); // = stamps
+    // 161 = cheaters ring
+    target.insert(162); // = b. wand
+    target.insert(169); // = flute
+    target.insert(214); // = map
+    // 231 = deathless figure
+    // 284 = disc // can't be randomized
+    target.insert(323); // = uv light
+    target.insert(334); // = yoyo
+    target.insert(382); // = mock disc
+    // 383 = firecracker
+    target.insert(417); // = spring
+    target.insert(442); // = pencil
+    target.insert(466); // = remote
+    target.insert(469); // = S.medal
+    // 550.? = bunny
+    target.insert(611); // = house key
+    target.insert(617); // = office key
+    // 627.0 = seahorse flame
+    // 627.1 = cat flame
+    // 627.1 = lizard flame
+    // 627.3 = ostrich flame
+    target.insert(634); // = top
+    target.insert(637); // = b. ball
+    target.insert(643); // = wheel
+    target.insert(679); // = E.medal
+    target.insert(708); // = bb. wand
+    target.insert(711); // = 65th egg
+    target.insert(780); // = f.pack
+
+    auto& map = maps[0];
+
+    for(auto& room : map.rooms) {
+        for(int y2 = 0; y2 < 22; y2++) {
+            for(int x2 = 0; x2 < 40; x2++) {
+                auto& tile = room.tiles[0][y2][x2];
+
+                if(target.contains(tile.tile_id)) {
+                    items.push_back(tile);
+                    locations.emplace_back(room.x * 40 + x2, room.y * 22 + y2);
+                }
+            }
+        }
+    }
+
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::ranges::shuffle(locations, g);
+
+    for(auto item : items) {
+        auto loc = locations.back();
+        locations.pop_back();
+
+        map.setTile(0, loc.x, loc.y, item);
+    }
+
+    updateRender();
+}
+
+static void export_exe(bool patch_renderdoc) {
+    auto out = rawData;
+
+    auto sections = getSegmentOffsets(out);
+    auto assets = std::span((asset_entry*)sections.data.data(), 676);
+
+    auto replaceAsset = [&](const std::vector<uint8_t>& data, int id) {
+        auto& asset = assets[id];
+        auto ptr = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+
+        if(((uint8_t)asset.type & 192) == 64) {
+            int key = 0; // 193, 212, 255, 300
+            if(id == 30 || id == 52) key = 1;
+            else if(id == 222 || id == 277 || id == 377) key = 2;
+
+            auto enc = encrypt(data, key);
+
+            assert(enc.size() == asset.length);
+            // asset.length = dat.size();
+            std::memcpy(ptr.data(), enc.data(), enc.size());
+        } else {
+            assert(data.size() == asset.length);
+            // asset.length = data.size();
+            std::memcpy(ptr.data(), data.data(), data.size());
+        }
+    };
+
+    for(size_t i = 0; i < 5; i++) {
+        replaceAsset(maps[i].save(), mapIds[i]);
+    }
+    replaceAsset(save_uvs(uvs), 254);
+
+    /*if(patch_steam) {
+        // patch steam restart
+        out[0xEFE6] = 0x48; // MOV AL, 0
+        out[0xEFE7] = 0xc6;
+        out[0xEFE8] = 0xc0;
+        out[0xEFE9] = 0x00;
+
+        out[0xEFEA] = 0x48; // NOP
+        out[0xEFEB] = 0x90;
+    }*/
+
+    if(patch_renderdoc) {
+        const char renderDocPattern[14] = "renderdoc.dll";
+        auto res = std::search(out.begin(), out.end(), std::begin(renderDocPattern), std::end(renderDocPattern));
+
+        if(res != out.end()) {
+            *res = 'l'; // replace first letter with 'l'
+        }
+    }
+
+    std::ofstream file("Animal Well.exe", std::ios::binary);
+    file.write(out.data(), out.size());
+}
+
+// Tips: Use with ImGuiDockNodeFlags_PassthruCentralNode!
+// The limitation with this call is that your window won't have a menu bar.
+// Even though we could pass window flags, it would also require the user to be able to call BeginMenuBar() somehow meaning we can't Begin/End in a single function.
+// But you can also use BeginMainMenuBar(). If you really want a menu bar inside the same window as the one hosting the dockspace, you will need to copy this code somewhere and tweak it.
+ImGuiID DockSpaceOverViewport() {
+    auto viewport = ImGui::GetMainViewport();
+
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+
+    ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_PassthruCentralNode;
+
+    ImGuiWindowFlags host_window_flags = 0;
+    host_window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking;
+    host_window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_MenuBar;
+    if(dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+        host_window_flags |= ImGuiWindowFlags_NoBackground;
+
+    char label[32];
+    ImFormatString(label, IM_ARRAYSIZE(label), "DockSpaceViewport_%08X", viewport->ID);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin(label, NULL, host_window_flags);
+    ImGui::PopStyleVar(3);
+
+    if(ImGui::BeginMenuBar()) {
+        if(ImGui::BeginMenu("File")) {
+            if(ImGui::MenuItem("Load")) {
+                LoadFileDialog.open();
+            }
+            if(ImGui::MenuItem("Dump assets")) {
+                DumpAssets();
+            }
+            /*if(ImGui::MenuItem("Export assets")) {
+
+            }*/
+            ImGui::Separator();
+            static bool patch_renderdoc = false;
+            ImGui::Checkbox("patch renderdoc", &patch_renderdoc);
+            if(ImGui::MenuItem("Export exe")) {
+                export_exe(patch_renderdoc);
+            }
+            ImGui::EndMenu();
+        }
+
+        if(ImGui::BeginMenu("Display")) {
+            static const char* mapNames[5] = { "Overworld", "Space", "Bunny temple", "Time Capsule", "CE temple" };
+            if(ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
+                updateRender();
+            }
+
+            ImGui::Checkbox("Foreground Tiles", &show_fg);
+            ImGui::ColorEdit4("fg tile color", &fg_color.r);
+            ImGui::Checkbox("Background Tiles", &show_bg);
+            ImGui::ColorEdit4("bg tile color", &bg_color.r);
+            ImGui::Checkbox("Background Texture", &show_bg_tex);
+            ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
+            ImGui::Checkbox("Apply lighting", &do_lighting);
+
+            ImGui::EndMenu();
+        }
+
+        if(ImGui::BeginMenu("Tools")) {
+            if(ImGui::MenuItem("Randomize items")) {
+                randomize();
+            }
+            if(ImGui::MenuItem("Make everything transparent")) {
+                for(auto& uv : uvs) {
+                    uv.blocks_light = false;
+                }
+            }
+
+            ImGui::EndMenu();
+        }
+
+        ImGui::EndMenuBar();
+    }
+
+    ImGuiID dockspace_id = ImGui::GetID("DockSpace");
+    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags, nullptr);
+
+    static auto first_time = true;
+    if(first_time) {
+        first_time = false;
+
+        ImGui::DockBuilderRemoveNode(dockspace_id); // clear any previous layout
+        ImGui::DockBuilderAddNode(dockspace_id, dockspace_flags | ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+
+        auto right = ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Right, 0.3f, nullptr, &dockspace_id);
+
+        // we now dock our windows into the docking node we made above
+        ImGui::DockBuilderDockWindow("Sprite Viewer", right);
+        ImGui::DockBuilderDockWindow("Tile Viewer", right);
+        ImGui::DockBuilderDockWindow("Search", right);
+        ImGui::DockBuilderDockWindow("Properties", right);
+        ImGui::DockBuilderFinish(dockspace_id);
+    }
+
+    ImGui::End();
+
+    return dockspace_id;
+}
+
+static void HelpMarker(const char* desc) {
+    ImGui::TextDisabled("(?)");
+    if(ImGui::BeginItemTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+static void DrawPreviewWindow() {
+    ImGui::Begin("Properties");
+    auto& io = ImGui::GetIO();
+    // ImGui::Text("fps %f", ImGui::GetIO().Framerate);
+
+    static const char* modes[] = { "Select", "Place" };
+    static int mode = 0;
+    ImGui::Combo("Mode", &mode, modes, sizeof(modes) / sizeof(char*));
+
+    auto mp = glm::vec4(((mousePos - screenSize / 2.0f) / screenSize) * 2.0f, 0, 1);
+    mp.y = -mp.y;
+    auto mouse_world_pos = glm::ivec2(glm::inverse(MVP) * mp) / 8;
+    const auto room_size = glm::ivec2(40, 22);
+
+    if(mode == 0) {
+        ImGui::SameLine();
+        HelpMarker("Right click to select a tile.\nEsc to unselect.");
+        static glm::ivec2 selectedPos = glm::vec2(-1, -1);
+        if(!io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
+            selectedPos = mouse_world_pos;
+        }
+        if(!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+            selectedPos = glm::ivec2(-1, -1);
+        }
+
+        glm::ivec2 asdasd;
+        if(selectedPos == glm::ivec2(-1, -1)) {
+            if(io.WantCaptureMouse) {
+                asdasd = glm::ivec2(-1, -1);
+            } else {
+                asdasd = mouse_world_pos;
+            }
+        } else {
+            asdasd = selectedPos;
+        }
+
+        auto room_pos = asdasd / room_size;
+        auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+
+        ImGui::Text("world pos %i %i", asdasd.x, asdasd.y);
+
+        if(room != nullptr) {
+            ImGui::SeparatorText("Room Data");
+            ImGui::Text("position %i %i", room->x, room->y);
+            ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
+            uint8_t bg_min = 0, bg_max = 18;
+            if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
+                vertecies_bg_tex = renderBgs(maps[selectedMap]);
+                VBO_bg_tex->BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
+            }
+
+            ImGui::InputScalar("pallet_index", ImGuiDataType_U8, &room->pallet_index);
+            ImGui::InputScalar("idk1", ImGuiDataType_U8, &room->idk1);
+            ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
+            ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
+
+            auto tp = glm::ivec2(glm::mod(glm::vec2(asdasd), glm::vec2(room_size)));
+            auto tile = room->tiles[0][tp.y][tp.x];
+            int tile_layer = 0;
+
+            if(show_fg && tile.tile_id != 0) {
+                tile_layer = 0;
+            } else {
+                tile = room->tiles[1][tp.y][tp.x];
+                tile_layer = 1;
+                if(!show_bg || tile.tile_id == 0) {
+                    tile = {};
+                    tile_layer = 2;
+                }
+            }
+
+            ImGui::SeparatorText("Room Tile Data");
+            ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background" : "N/A");
+            ImGui::Text("id %i", tile.tile_id);
+            ImGui::Text("param %i", tile.param);
+
+            if(ImGui::BeginTable("tile_flags_table", 2)) {
+                int flags = tile.flags;
+
+                if(tile_layer == 2) ImGui::BeginDisabled();
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
+
+                if(tile_layer == 2) ImGui::EndDisabled();
+
+                if(flags != tile.flags) {
+                    room->tiles[tile_layer][tp.y][tp.x].flags = flags;
+                    updateRender();
+                }
+
+                ImGui::EndTable();
+            }
+
+            auto& uv = uvs[tile.tile_id];
+
+            ImGui::SeparatorText("Tile Data");
+            if(tile_layer == 2) ImGui::BeginDisabled();
+            DrawUvFlags(uv);
+            if(tile_layer == 2) ImGui::EndDisabled();
+
+            auto pos = glm::vec2(asdasd) * 8.0f;
+
+            if(sprites.contains(tile.tile_id)) {
+                auto sprite = sprites[tile.tile_id];
+
+                ImGui::NewLine();
+                ImGui::Text("sprite");
+                ImGui::Text("composite_size %i %i", sprite.composite_size.x, sprite.composite_size.y);
+                ImGui::Text("layer_count %i", sprite.layer_count);
+                ImGui::Text("composition_count %i", sprite.composition_count);
+                ImGui::Text("subsprite_count %i", sprite.subsprite_count);
+                ImGui::Text("animation_count %i", sprite.animation_count);
+
+                auto bb_max = pos + glm::vec2(8, 8);
+
+                int composition_id = 0;
+                for(int j = 0; j < sprite.layer_count; ++j) {
+                    auto subsprite_id = sprite.compositions[composition_id * sprite.layer_count + j];
+                    if(subsprite_id >= sprite.subsprite_count)
+                        continue;
+
+                    auto& subsprite = sprite.sub_sprites[subsprite_id];
+
+                    auto ap = pos + glm::vec2(subsprite.composite_pos);
+                    if(tile.vertical_mirror) {
+                        ap.y = pos.y + (sprite.composite_size.y - (subsprite.composite_pos.y + subsprite.size.y));
+                    }
+                    if(tile.horizontal_mirror) {
+                        ap.x = pos.x + (sprite.composite_size.x - (subsprite.composite_pos.x + subsprite.size.x));
+                    }
+
+                    auto end = ap + glm::vec2(subsprite.size);
+                    bb_max.x = std::max(bb_max.x, end.x);
+                    bb_max.y = std::max(bb_max.y, end.y);
+
+                    auto& layer = sprite.layers[j];
+                    if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
+
+                    DrawRect(selectionVerts, ap, glm::vec2(subsprite.size), { 1, 1, 1, 1 }, 0.5f);
+                    // ImGui::Image((ImTextureID)atlas->id.value, toImVec(size), )
+                }
+
+                DrawRect(selectionVerts, pos, bb_max - pos, { 1, 1, 1, 0.8 }, 1);
+            } else {
+                if(tile.tile_id == 0) {
+                    DrawRect(selectionVerts, pos, glm::vec2(8), { 1, 1, 1, 1 }, 1);
+                } else {
+                    DrawRect(selectionVerts, pos, glm::vec2(uv.size), { 1, 1, 1, 1 }, 1);
+                }
+            }
+            DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, {1, 1, 1, 0.5}, 1);
+        }
+    } else if(mode == 1) {
+        static MapTile placing;
+        static bool background;
+
+        ImGui::SameLine();
+        HelpMarker("Middle click to copy a tile.\nRight click to place a tile.");
+        ImGui::Text("world pos %i %i", mouse_world_pos.x, mouse_world_pos.y);
+
+        auto room_pos = mouse_world_pos / room_size;
+        auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+        if(!io.WantCaptureMouse && room != nullptr) {
+            if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE)) {
+                auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
+                auto tile = room->tiles[0][tp.y][tp.x];
+
+                if(show_fg && tile.tile_id != 0) {
+                    placing = tile;
+                    background = false;
+                } else if(show_bg) {
+                    tile = room->tiles[1][tp.y][tp.x];
+                    if(tile.tile_id != 0) {
+                        placing = tile;
+                        background = true;
+                    } else {
+                        placing = {};
+                    }
+                }
+            }
+            if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
+                auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
+                if(room->tiles[0][tp.y][tp.x] != placing) {
+                    room->tiles[0][tp.y][tp.x] = placing;
+                    updateRender();
+                }
+            }
+        }
+
+        ImGui::NewLine();
+        ImGui::Checkbox("background layer", &background);
+        ImGui::NewLine();
+        ImGui::InputScalar("id", ImGuiDataType_U16, &placing.tile_id);
+        ImGui::InputScalar("param", ImGuiDataType_U8, &placing.param);
+
+        if(ImGui::BeginTable("tile_flags_table", 2)) {
+            int flags = placing.flags;
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Vertical mirror", &flags, 2);
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 90", &flags, 4);
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 180", &flags, 8);
+
+            placing.flags = flags;
+
+            ImGui::EndTable();
+        }
+
+        auto& uv = uvs[placing.tile_id];
+
+        auto pos = glm::vec2(uv.pos);
+        auto size = glm::vec2(uv.size);
+        auto atlas_size = glm::vec2(atlas->width, atlas->height);
+
+        ImGui::Text("preview");
+        ImGui::Image((ImTextureID)atlas->id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+
+        if(room != nullptr) {
+            DrawRect(selectionVerts, glm::vec2(mouse_world_pos) * 8.0f, glm::vec2(8), { 1, 1, 1, 1 }, 1);
+            DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, { 1, 1, 1, 0.5 }, 1);
+        }
+    }
+
+    ImGui::End();
+}
+
 // Main code
-int main(int, char**) {
+int runViewer() {
 #pragma region glfw/opengl setup
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
@@ -401,7 +1439,7 @@ int main(int, char**) {
     // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 
     // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Animal Well map viewer", nullptr, nullptr);
+    window = glfwCreateWindow(1280, 720, "Animal Well map viewer", nullptr, nullptr);
     if (window == nullptr)
         return 1;
     glfwMakeContextCurrent(window);
@@ -472,69 +1510,6 @@ int main(int, char**) {
     // IM_ASSERT(font != nullptr);
 #pragma endregion
 
-#pragma region map rendering
-    auto gameData = loadGameAssets();
-
-    Texture bg_tex;
-    glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex.id);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-    bg_tex.LoadSubImage(1  - 1, gameData[14].data);
-    bg_tex.LoadSubImage(2  - 1, gameData[22].data);
-    bg_tex.LoadSubImage(3  - 1, gameData[22].data);
-    bg_tex.LoadSubImage(4  - 1, gameData[19].data);
-    bg_tex.LoadSubImage(5  - 1, gameData[19].data);
-    bg_tex.LoadSubImage(6  - 1, gameData[15].data);
-    bg_tex.LoadSubImage(7  - 1, gameData[13].data);
-    bg_tex.LoadSubImage(8  - 1, gameData[13].data);
-    bg_tex.LoadSubImage(9  - 1, gameData[16].data);
-    bg_tex.LoadSubImage(10 - 1, gameData[17].data);
-    bg_tex.LoadSubImage(11 - 1, gameData[16].data);
-    bg_tex.LoadSubImage(12 - 1, gameData[26].data);
-    bg_tex.LoadSubImage(13 - 1, gameData[11].data);
-    bg_tex.LoadSubImage(14 - 1, gameData[12].data);
-    bg_tex.LoadSubImage(15 - 1, gameData[20].data);
-    bg_tex.LoadSubImage(16 - 1, gameData[18].data);
-    bg_tex.LoadSubImage(17 - 1, gameData[23].data);
-    bg_tex.LoadSubImage(18 - 1, gameData[24].data);
-    bg_tex.LoadSubImage(19 - 1, gameData[21].data);
-
-    Texture atlas;
-    atlas.Load(gameData[255].data);
-
-    bool show_fg = true;
-    bool show_bg = true;
-    bool show_bg_tex = true;
-    bool do_lighting = true;
-
-    glm::vec4 bg_color{0.8, 0.8, 0.8, 1};
-    glm::vec4 fg_color{1, 1, 1, 1};
-    glm::vec4 bg_tex_color{0.5, 0.5, 0.5, 1};
-
-    int selectedMap = 0;
-    static int mapIds[5] = {300, 193, 52, 222, 157};
-    static const char* mapNames[5] = {"Overworld", "Space", "Bunny temple", "Time Capsule", "CE temple"};
-    Map maps[5]{};
-    for (size_t i = 0; i < 5; i++) {
-        maps[i] = parse_map(gameData[mapIds[i]]);
-    }
-
-    std::map<uint32_t, SpriteData> sprites;
-    for (auto el : spriteMapping) {
-        sprites[el.tile_id] = parse_sprite(gameData[el.asset_id]);
-    }
-
-    std::vector<uv_data> uvs = parse_uvs(gameData[254]);
-    // position.xy/uv.zw
-    auto vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
-    auto vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
-    auto vertecies_bg_tex = renderBgs(maps[selectedMap]);
-    auto vertecies_light = renderLights(maps[selectedMap], uvs);
-
-#pragma endregion
-
 #pragma region opgenl buffer setup
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -549,32 +1524,32 @@ int main(int, char**) {
     merge_shader.setInt("lights", 1);
 
     VAO VAO_fg{};
-    VBO VBO_fg{GL_ARRAY_BUFFER, GL_STATIC_DRAW};
+    VBO_fg = std::make_unique<VBO>( GL_ARRAY_BUFFER, GL_STATIC_DRAW );
     VAO_fg.Bind();
-    VBO_fg.BufferData(vertecies_fg.data(), vertecies_fg.size() * sizeof(glm::vec4));
+    VBO_fg->Bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     VAO VAO_bg{};
-    VBO VBO_bg{GL_ARRAY_BUFFER, GL_STATIC_DRAW};
+    VBO_bg = std::make_unique<VBO>( GL_ARRAY_BUFFER, GL_STATIC_DRAW );
     VAO_bg.Bind();
-    VBO_bg.BufferData(vertecies_bg.data(), vertecies_bg.size() * sizeof(glm::vec4));
+    VBO_bg->Bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     VAO VAO_bg_tex{};
-    VBO VBO_bg_tex{ GL_ARRAY_BUFFER, GL_STATIC_DRAW };
+    VBO_bg_tex = std::make_unique<VBO>( GL_ARRAY_BUFFER, GL_STATIC_DRAW );
     VAO_bg_tex.Bind();
-    VBO_bg_tex.BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
+    VBO_bg_tex->Bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
 
     VAO VAO_light{};
-    VBO VBO_light{ GL_ARRAY_BUFFER, GL_STATIC_DRAW };
+    VBO_light = std::make_unique<VBO>( GL_ARRAY_BUFFER, GL_STATIC_DRAW );
     VAO_light.Bind();
-    VBO_light.BufferData(vertecies_light.data(), vertecies_light.size() * sizeof(float) * 5);
+    VBO_light->Bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
@@ -586,7 +1561,21 @@ int main(int, char**) {
     framebuffers.push_back(&light_fb);
     framebuffers.push_back(&tile_fb);
 
+    VAO VAO_selction{};
+    VBO_selection = std::make_unique<VBO>(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
+    VAO_selction.Bind();
+    VBO_selection->Bind();
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
+
 #pragma endregion
+
+    if(!LoadFileDialog.tryLoad()) {
+        LoadFileDialog.error_msg = "";
+        LoadFileDialog.open();
+    }
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -602,184 +1591,96 @@ int main(int, char**) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        auto MVP = projection * view;
+        selectionVerts.clear();
 
-        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        // if(show_demo_window) ImGui::ShowDemoWindow(&show_demo_window);
+        MVP = projection * view;
 
-        {
-            ImGui::Begin("Window");
+        DockSpaceOverViewport();
+        LoadFileDialog.draw();
+        // ImGui::ShowDemoWindow();
 
-            if (ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
-                vertecies_fg = renderMap(maps[selectedMap], 0, sprites, uvs);
-                vertecies_bg = renderMap(maps[selectedMap], 1, sprites, uvs);
-                vertecies_bg_tex = renderBgs(maps[selectedMap]);
-                vertecies_light = renderLights(maps[selectedMap], uvs);
+        // skip rendering if no data is loaded
+        if(!rawData.empty()) {
+            DrawTileWindow();
+            DrawFindWindow();
+            DrawSpriteWindow();
+            DrawPreviewWindow();
 
-                VBO_fg.BufferData(vertecies_fg.data(), vertecies_fg.size() * sizeof(glm::vec4));
-                VBO_bg.BufferData(vertecies_bg.data(), vertecies_bg.size() * sizeof(glm::vec4));
-                VBO_bg_tex.BufferData(vertecies_bg_tex.data(), vertecies_bg_tex.size() * sizeof(float) * 5);
-                VBO_light.BufferData(vertecies_light.data(), vertecies_light.size() * sizeof(float) * 5);
+            // 1. light pass
+            if(do_lighting) {
+                glClearColor(0.0, 0.0, 0.0, 1.0);
+                light_fb.Bind();
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                light_shader.Use();
+                light_shader.setMat4("MVP", MVP);
+                VAO_light.Bind();
+                glDrawArrays(GL_TRIANGLES, 0, vertecies_light.size());
+            } else {
+                glClearColor(1.0, 1.0, 1.0, 1.0);
+                light_fb.Bind();
+                glClear(GL_COLOR_BUFFER_BIT);
             }
-            ImGui::Checkbox("Foreground Tiles", &show_fg);
-            ImGui::ColorEdit4("fg tile color", &fg_color.r);
-            ImGui::Checkbox("Background Tiles", &show_bg);
-            ImGui::ColorEdit4("bg tile color", &bg_color.r);
-            ImGui::Checkbox("Background Texture", &show_bg_tex);
-            ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
-            ImGui::Checkbox("Apply lighting", &do_lighting);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-            auto mp = glm::vec4(((mousePos - screenSize / 2.0f) / screenSize) * 2.0f, 0, 1);
-            mp.y = -mp.y;
-            auto wp = glm::vec2(glm::inverse(MVP) * mp);
-
-            // ImGui::Text("mouse pos %f %f", mousePos.x, mousePos.y);
-            ImGui::Text("world pos %f %f", (wp.x / 8), (wp.y / 8));
-
-            auto room_size = glm::vec2(40 * 8, 22 * 8);
-            auto rp = glm::ivec2(wp / room_size);
-            auto room = maps[selectedMap](rp.x, rp.y);
-
-            if (wp.x >= 0 && wp.y >= 0 && room != nullptr) {
-                ImGui::NewLine();
-                ImGui::Text("room");
-                ImGui::Text("position %i %i", room->x, room->y);
-                ImGui::Text("water level %i", room->waterLevel);
-                ImGui::Text("background id %i", room->bgId);
-
-                ImGui::Text("pallet_index %i", room->pallet_index);
-                ImGui::Text("idk1 %i", room->idk1);
-                ImGui::Text("idk2 %i", room->idk2);
-                ImGui::Text("idk3 %i", room->idk3);
-
-                auto tp = glm::ivec2(glm::mod(wp, room_size) / 8.0f);
-                auto tile = room->tiles[0][tp.y][tp.x];
-                int tile_layer = 0;
-
-                if (show_fg && tile.tile_id != 0) {
-                    tile_layer = 0;
-                } else {
-                    tile = room->tiles[1][tp.y][tp.x];
-                    tile_layer = 1;
-                    if (!show_bg || tile.tile_id == 0) {
-                        tile = {};
-                        tile_layer = 2;
-                    }
-                }
-
-                ImGui::NewLine();
-                ImGui::Text("tile");
-                ImGui::Text("offset %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background" : "N/A");
-                ImGui::Text("id %i", tile.tile_id);
-                ImGui::Text("param %i", tile.param);
-
-                ImGui::BeginDisabled();
-                int flags = tile.flags;
-                ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
-                ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
-                ImGui::CheckboxFlags("rotate_90", &flags, 4);
-                ImGui::CheckboxFlags("rotate_180", &flags, 8);
-
-                int uv_flags = uvs[tile.tile_id].flags;
-                ImGui::NewLine();
-                ImGui::Text("uv flags");
-
-                ImGui::CheckboxFlags("collides_left", &uv_flags, 1 << 0);   // correct
-                ImGui::CheckboxFlags("collides_right", &uv_flags, 1 << 1);  // correct
-                ImGui::CheckboxFlags("collides_up", &uv_flags, 1 << 2);     // correct
-                ImGui::CheckboxFlags("collides_down", &uv_flags, 1 << 3);   // correct
-                ImGui::CheckboxFlags("not_placeable", &uv_flags, 1 << 4);
-                ImGui::CheckboxFlags("additive", &uv_flags, 1 << 5);
-                ImGui::CheckboxFlags("obscures", &uv_flags, 1 << 6);
-                ImGui::CheckboxFlags("contiguous", &uv_flags, 1 << 7); // correct
-                ImGui::CheckboxFlags("blocks_light", &uv_flags, 1 << 8);
-                ImGui::CheckboxFlags("self_contiguous", &uv_flags, 1 << 9); // correct
-                ImGui::CheckboxFlags("hidden", &uv_flags, 1 << 10);
-                ImGui::CheckboxFlags("dirt", &uv_flags, 1 << 11);
-                ImGui::CheckboxFlags("has_normals", &uv_flags, 1 << 12);  // correct
-                ImGui::CheckboxFlags("uv_light", &uv_flags, 1 << 13);     // correct
-
-                ImGui::EndDisabled();
-
-                if (sprites.contains(tile.tile_id)) {
-                    auto sprite = sprites[tile.tile_id];
-
-                    ImGui::NewLine();
-                    ImGui::Text("sprite");
-                    ImGui::Text("composite_size %i %i", sprite.composite_size.x, sprite.composite_size.y);
-                    ImGui::Text("layer_count %i", sprite.layer_count);
-                    ImGui::Text("composition_count %i", sprite.composition_count);
-                    ImGui::Text("subsprite_count %i", sprite.subsprite_count);
-                    ImGui::Text("animation_count %i", sprite.animation_count);
-                }
-            }
-
-            ImGui::End();
-        }
-
-        // 1. light pass
-        if(do_lighting) {
-            glClearColor(0.0, 0.0, 0.0, 1.0);
-            light_fb.Bind();
+            // 2. main pass
+            tile_fb.Bind();
+            glClearColor(0.0, 0.0, 0.0, 0.0);
             glClear(GL_COLOR_BUFFER_BIT);
 
-            light_shader.Use();
-            light_shader.setMat4("MVP", MVP);
-            VAO_light.Bind();
-            glDrawArrays(GL_TRIANGLES, 0, vertecies_light.size());
-        } else {
-            glClearColor(1.0, 1.0, 1.0, 1.0);
-            light_fb.Bind();
-            glClear(GL_COLOR_BUFFER_BIT);
-        }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            if(show_bg_tex) {
+                bg_shader.Use();
+                bg_shader.setMat4("MVP", MVP);
+                bg_shader.setVec4("color", bg_tex_color);
 
-        // 2. main pass
-        tile_fb.Bind();
-        glClearColor(0.0, 0.0, 0.0, 0.0);
-        glClear(GL_COLOR_BUFFER_BIT);
+                glActiveTexture(GL_TEXTURE0);
+                bg_tex->Bind();
 
-        if(show_bg_tex) {
-            bg_shader.Use();
-            bg_shader.setMat4("MVP", MVP);
-            bg_shader.setVec4("color", bg_tex_color);
+                VAO_bg_tex.Bind();
+                glDrawArrays(GL_TRIANGLES, 0, vertecies_bg_tex.size());
+            }
+
+            tile_shader.Use();
+            tile_shader.setMat4("MVP", MVP);
 
             glActiveTexture(GL_TEXTURE0);
-            bg_tex.Bind();
+            atlas->Bind();
 
-            VAO_bg_tex.Bind();
-            glDrawArrays(GL_TRIANGLES, 0, vertecies_bg_tex.size());
+            if (show_bg) {
+                tile_shader.setVec4("color", bg_color);
+                VAO_bg.Bind();
+                glDrawArrays(GL_TRIANGLES, 0, vertecies_bg.size());
+            }
+            if (show_fg) {
+                tile_shader.setVec4("color", fg_color);
+                VAO_fg.Bind();
+                glDrawArrays(GL_TRIANGLES, 0, vertecies_fg.size());
+            }
+
+            // 3. final merge pass
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            merge_shader.Use();
+            glActiveTexture(GL_TEXTURE0);
+            tile_fb.tex.Bind();
+            glActiveTexture(GL_TEXTURE1);
+            light_fb.tex.Bind();
+
+            RenderQuad();
+
+            // 4. draw selection vertices over that
+            light_shader.Use();
+            light_shader.setMat4("MVP", MVP);
+            VAO_selction.Bind();
+            VBO_selection->BufferData(selectionVerts.data(), selectionVerts.size() * sizeof(float) * 6);
+            glDrawArrays(GL_TRIANGLES, 0, selectionVerts.size());
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+            glClear(GL_COLOR_BUFFER_BIT);
         }
-
-        tile_shader.Use();
-        tile_shader.setMat4("MVP", MVP);
-
-        glActiveTexture(GL_TEXTURE0);
-        atlas.Bind();
-
-        if (show_bg) {
-            tile_shader.setVec4("color", bg_color);
-            VAO_bg.Bind();
-            glDrawArrays(GL_TRIANGLES, 0, vertecies_bg.size());
-        }
-        if (show_fg) {
-            tile_shader.setVec4("color", fg_color);
-            VAO_fg.Bind();
-            glDrawArrays(GL_TRIANGLES, 0, vertecies_fg.size());
-        }
-
-        // 3. final merge pass
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        merge_shader.Use();
-        glActiveTexture(GL_TEXTURE0);
-        tile_fb.tex.Bind();
-        glActiveTexture(GL_TEXTURE1);
-        light_fb.tex.Bind();
-
-        RenderQuad();
 
         // Rendering
         ImGui::Render();
@@ -808,3 +1709,16 @@ int main(int, char**) {
 
     return 0;
 }
+
+int main(int, char**) {
+    runViewer();
+    return 0;
+}
+
+#ifdef _WIN32
+#include <Windows.h>
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    // SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    return main(__argc, __argv);
+}
+#endif

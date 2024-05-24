@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <span>
 
 #include <glad/gl.h>
 #include <stb_image.h>
@@ -121,7 +122,7 @@ struct Texture {
         stbi_image_free(dat);
     }
 
-    void LoadSubImage(int layer, const std::vector<uint8_t>& data) {
+    void LoadSubImage(int layer, std::span<const uint8_t> data) {
         int n;
         auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
         if(dat == nullptr) {

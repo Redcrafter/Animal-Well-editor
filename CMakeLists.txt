@@ -33,10 +33,12 @@ source_group(TREE "${CMAKE_SOURCE_DIR}/src" FILES ${Common_sources})
 add_executable(editor ${Common_sources} ${imgui_sources}
     "./lib/imgui/backends/imgui_impl_opengl3.cpp" 
     "./lib/imgui/backends/imgui_impl_glfw.cpp"
+    "./lib/imgui/misc/cpp/imgui_stdlib.cpp"
     "./lib/glad/src/gl.c")
 
 target_include_directories(editor PRIVATE "lib/imgui" "lib/stb" "lib/glm" "lib/glad/include" glfw)
 target_link_libraries(editor PRIVATE glfw ${LIBS})
+set_target_properties(editor PROPERTIES WIN32_EXECUTABLE TRUE) 
 
 add_custom_command(TARGET editor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
