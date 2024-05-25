@@ -1377,8 +1377,8 @@ static void DrawPreviewWindow() {
             }
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
                 auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
-		auto tile_layer = room->tiles[background ? 1 : 0];
-		auto tile = tile_layer[tp.y][tp.x];
+                auto tile_layer = room->tiles[background ? 1 : 0];
+                auto tile = tile_layer[tp.y][tp.x];
                 if(tile != placing) {
                     tile_layer[tp.y][tp.x] = placing;
                     updateRender();
