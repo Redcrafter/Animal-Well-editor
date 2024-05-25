@@ -1245,6 +1245,35 @@ static void DrawPreviewWindow() {
             ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
             ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
 
+            ImGui::Separator();
+
+            static std::string room_file_name = "roomname.rm";
+
+            ImGui::InputText("path", &room_file_name);
+
+            if (ImGui::Button("Export Room")) { try {
+                std::ofstream file(room_file_name, std::ios::binary);
+                file.exceptions(std::ios::failbit);
+                file.write((char*)room, sizeof(Room));
+                file.close();
+            } catch (std::system_error& err) {
+                std::cerr << "room export error: " << err.code().message() << std::endl;
+            } }
+
+            if (ImGui::Button("Import Room")) { try {
+                std::ifstream file(room_file_name, std::ios::binary);
+                file.exceptions(std::ios::failbit);
+                uint8_t x = room->x;
+                uint8_t y = room->y;
+                file.read((char*)room, sizeof(Room));
+                file.close();
+                room->x = x;
+                room->y = y;
+                updateRender();
+            } catch (std::system_error& err) {
+                std::cerr << "room import error: " << err.code().message() << std::endl;
+            } }
+
             auto tp = glm::ivec2(glm::mod(glm::vec2(asdasd), glm::vec2(room_size)));
             auto tile = room->tiles[0][tp.y][tp.x];
             int tile_layer = 0;
