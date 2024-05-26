@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <span>
@@ -9,6 +8,8 @@
 #include <glad/gl.h>
 #include <stb_image.h>
 #include <glm/glm.hpp>
+
+#include "windows/errors.hpp"
 
 template <typename T>
 struct Unique {
@@ -209,7 +210,7 @@ struct ShaderProgram {
             vertexCode = vShaderStream.str();
             fragmentCode = fShaderStream.str();
         } catch (std::ifstream::failure& e) {
-            printf("ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ\n");
+            ErrorDialog.push("ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ\n");
         }
 
         const char* vShaderCode = vertexCode.c_str();
@@ -227,7 +228,7 @@ struct ShaderProgram {
         glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
         if (!success) {
             glGetShaderInfoLog(vertex, 512, nullptr, infoLog);
-            printf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
+            ErrorDialog.pushf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
         }
 
         // similiar for Fragment Shader
@@ -238,7 +239,7 @@ struct ShaderProgram {
         glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
         if (!success) {
             glGetShaderInfoLog(fragment, 512, nullptr, infoLog);
-            printf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
+            ErrorDialog.pushf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
         }
 
         // shader Program
@@ -250,7 +251,7 @@ struct ShaderProgram {
         glGetProgramiv(ID, GL_LINK_STATUS, &success);
         if (!success) {
             glGetProgramInfoLog(ID, 512, nullptr, infoLog);
-            printf("ERROR::SHADER::PROGRAM::LINKING_FAILED\n%s\n", infoLog);
+            ErrorDialog.pushf("ERROR::SHADER::PROGRAM::LINKING_FAILED\n%s\n", infoLog);
         }
 
         // delete the shaders as they're linked into our program now and no longer necessary

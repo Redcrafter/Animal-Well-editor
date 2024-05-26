@@ -9,7 +9,7 @@
 
 struct MapHeader {
     uint32_t signature1;
-    uint16_t roomCount;
+    uint16_t roomCount; // actually capped at 255
 
     uint8_t world_wrap_x_start;
     uint8_t world_wrap_x_end;
@@ -68,11 +68,18 @@ class Map {
     Map() = default;
 
     explicit Map(std::span<const uint8_t> data) {
-        assert(data.size() >= sizeof(MapHeader));
-        auto head = *(MapHeader*)(data.data());
-        assert(data.size() >= 0x10 + head.roomCount * sizeof(Room));
+        if(data.size() < sizeof(MapHeader)) {
+            throw std::runtime_error("Error parsing map: invalid size");
+        }
 
-        Room* rooms = (Room*)(data.data() + 0x10);
+        auto head = *(MapHeader*)(data.data());
+        if(head.signature1 != 0xF00DCAFE || head.signature2 != 0xF0F0CAFE) {
+            throw std::runtime_error("Error parsing map: invalid header");
+        }
+        if(data.size() < sizeof(MapHeader) + head.roomCount * sizeof(Room)) {
+            throw std::runtime_error("Error parsing map: invalid size");
+        }
+        Room* rooms = (Room*)(data.data() + sizeof(MapHeader));
 
         world_wrap_x_start = head.world_wrap_x_start;
         world_wrap_x_end = head.world_wrap_x_end;

@@ -9,7 +9,11 @@ find_package(OpenGL REQUIRED)
 if(WIN32)
     set(LIBS OpenGL32)
 elseif(UNIX)
-    set(LIBS GL stdc++fs pthread)
+    find_package(GTK2 REQUIRED gtk)
+
+    set(INCLUDES ${GTK2_INCLUDE_DIRS})
+    set(LIBS GL ${GTK2_LIBRARIES} stdc++fs pthread)
+
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1")
 endif()
 
@@ -34,9 +38,10 @@ add_executable(editor ${Common_sources} ${imgui_sources}
     "./lib/imgui/backends/imgui_impl_opengl3.cpp" 
     "./lib/imgui/backends/imgui_impl_glfw.cpp"
     "./lib/imgui/misc/cpp/imgui_stdlib.cpp"
-    "./lib/glad/src/gl.c")
+    "./lib/glad/src/gl.c"
+    "./lib/nativefiledialog/nfd.cpp")
 
-target_include_directories(editor PRIVATE "lib/imgui" "lib/stb" "lib/glm" "lib/glad/include" glfw)
+target_include_directories(editor PRIVATE "lib/imgui" "lib/stb" "lib/glm" "lib/glad/include" "lib/nativefiledialog" glfw)
 target_link_libraries(editor PRIVATE glfw ${LIBS})
 set_target_properties(editor PROPERTIES WIN32_EXECUTABLE TRUE) 
 

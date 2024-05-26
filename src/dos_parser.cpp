@@ -242,12 +242,6 @@ struct SectionHeader {
     SectionFlags characteristics;
 };
 
-static std::vector<char> readFile(const char* path) {
-    std::ifstream testFile(path, std::ios::binary);
-    std::vector<char> fileContents((std::istreambuf_iterator<char>(testFile)), std::istreambuf_iterator<char>());
-    return fileContents;
-}
-
 SegmentData getSegmentOffsets(std::span<char> data) {
     auto ptr = (uint8_t*)data.data();
 

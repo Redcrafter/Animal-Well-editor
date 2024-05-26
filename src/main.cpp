@@ -17,13 +17,21 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <misc/cpp/imgui_stdlib.h>
 
 #include "structures/asset.hpp"
 #include "structures/entity.hpp"
 #include "structures/map.hpp"
 #include "structures/tile.hpp"
 #include "dos_parser.hpp"
+
+#include "windows/errors.hpp"
+
+#include "nfd.h"
+
+// TODO:
+// reduce global state
+// move windows into separate files
+// improve lighting
 
 GLFWwindow* window;
 
@@ -484,155 +492,117 @@ static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
 }
 
-class {
-    std::string currentPath = "C:/Program Files (x86)/Steam/steamapps/common/Animal Well/Animal Well.exe";
-    // open has to be deferred because of imgui issue see https://github.com/ocornut/imgui/issues/331
-    bool shouldOpen = false;
-
-public:
-    std::string error_msg;
-
-    void draw() {
-        if(shouldOpen) {
-            ImGui::OpenPopup("Open File");
-            shouldOpen = false;
-        }
-
-        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
-        if(ImGui::BeginPopupModal("Open File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::InputText("path", &currentPath);
-            ImGui::Separator();
-
-            if(ImGui::Button("Open")) {
-                tryLoad();
-            }
-            ImGui::SameLine();
-            if(ImGui::Button("Cancel")) {
-                ImGui::CloseCurrentPopup();
-            }
-
-            if(!error_msg.empty()) {
-                ImGui::OpenPopup("Open File Error");
-            }
-            if(ImGui::BeginPopupModal("Open File Error")) {
-                ImGui::Text("Failed to load file: %s", error_msg.c_str());
-                if(ImGui::Button("Ok")) {
-                    error_msg.clear();
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-            }
-
-            ImGui::EndPopup();
-        }
-    }
-    void open() {
-        shouldOpen = true;
+static void LoadAtlas(std::span<const uint8_t> data) {
+    int width, height, n;
+    auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
+    if(dat == nullptr) {
+        throw std::runtime_error("invalid texture atlas format");
     }
 
-    void LoadAtlas(std::span<const uint8_t> data) {
-        int width, height, n;
-        auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
-        if(dat == nullptr) {
-            throw std::runtime_error("invalid texture atlas format");
+    atlas = std::make_unique<Texture>();
+    // chroma key cyan and replace with alpha
+
+    auto vptr = (uint32_t*)dat;
+    for(int i = 0; i < width * height; ++i) {
+        if(vptr[i] == 0xFFFFFF00) {
+            vptr[i] = 0;
         }
-
-        atlas = std::make_unique<Texture>();
-        // chroma key cyan and replace with alpha
-
-        auto vptr = (uint32_t*)dat;
-        for(int i = 0; i < width * height; ++i) {
-            if(vptr[i] == 0xFFFFFF00) {
-                vptr[i] = 0;
-            }
-        }
-
-        atlas->Bind();
-        atlas->width = width;
-        atlas->height = height;
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, dat);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        stbi_image_free(dat);
     }
 
-    bool tryLoad() {
-        if(!std::filesystem::exists(currentPath)) {
-            error_msg = "File not found";
-            return false;
-        }
-        rawData = readFile(currentPath.c_str());
-        auto sections = getSegmentOffsets(rawData);
+    atlas->Bind();
+    atlas->width = width;
+    atlas->height = height;
 
-        assert(sections.data.size() >= sizeof(asset_entry) * 676);
-        auto assets = std::span((asset_entry*)sections.data.data(), 676);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, dat);
 
-        std::vector<uint8_t> decryptBuffer;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-        auto get_asset = [&](int id) {
-            assert(id >= 0 && id < 676);
-            auto& asset = assets[id];
-            assert(sections.rdata.size() >= asset.ptr - sections.rdata_pointer_offset + asset.length);
-            auto dat = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-            if(tryDecrypt(asset, dat, decryptBuffer)) {
-                return std::span(decryptBuffer);
-            }
-            return dat;
-        };
+    stbi_image_free(dat);
+};
 
-        LoadAtlas(get_asset(255));
-
-        bg_tex = std::make_unique<Texture>();
-        glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex->id);
-        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-        bg_tex->LoadSubImage(1 - 1, get_asset(14));
-        bg_tex->LoadSubImage(2 - 1, get_asset(22));
-        bg_tex->LoadSubImage(3 - 1, get_asset(22));
-        bg_tex->LoadSubImage(4 - 1, get_asset(19));
-        bg_tex->LoadSubImage(5 - 1, get_asset(19));
-        bg_tex->LoadSubImage(6 - 1, get_asset(15));
-        bg_tex->LoadSubImage(7 - 1, get_asset(13));
-        bg_tex->LoadSubImage(8 - 1, get_asset(13));
-        bg_tex->LoadSubImage(9 - 1, get_asset(16));
-        bg_tex->LoadSubImage(10 - 1, get_asset(17));
-        bg_tex->LoadSubImage(11 - 1, get_asset(16));
-        bg_tex->LoadSubImage(12 - 1, get_asset(26));
-        bg_tex->LoadSubImage(13 - 1, get_asset(11));
-        bg_tex->LoadSubImage(14 - 1, get_asset(12));
-        bg_tex->LoadSubImage(15 - 1, get_asset(20));
-        bg_tex->LoadSubImage(16 - 1, get_asset(18));
-        bg_tex->LoadSubImage(17 - 1, get_asset(23));
-        bg_tex->LoadSubImage(18 - 1, get_asset(24));
-        bg_tex->LoadSubImage(19 - 1, get_asset(21));
-
-        for(size_t i = 0; i < 5; i++) {
-            maps[i] = Map(get_asset(mapIds[i]));
-        }
-
-        for(auto el : spriteMapping) {
-            sprites[el.tile_id] = parse_sprite(get_asset(el.asset_id));
-        }
-
-        uvs = parse_uvs(get_asset(254));
-
-        updateRender();
-
-        ImGui::CloseCurrentPopup();
-        return true;
+static bool load_game(const std::string& path) {
+    if(!std::filesystem::exists(path)) {
+        ErrorDialog.push("File not found");
+        return false;
     }
-} LoadFileDialog;
+    rawData = readFile(path.c_str());
+
+    auto sections = getSegmentOffsets(rawData);
+
+    assert(sections.data.size() >= sizeof(asset_entry) * 676);
+    auto assets = std::span((asset_entry*)sections.data.data(), 676);
+
+    std::vector<uint8_t> decryptBuffer;
+
+    auto get_asset = [&](int id) {
+        assert(id >= 0 && id < 676);
+        auto& asset = assets[id];
+        assert(sections.rdata.size() >= asset.ptr - sections.rdata_pointer_offset + asset.length);
+        auto dat = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+
+        if(tryDecrypt(asset, dat, decryptBuffer)) {
+            return std::span(decryptBuffer);
+        }
+        return dat;
+    };
+
+    LoadAtlas(get_asset(255));
+
+    bg_tex = std::make_unique<Texture>();
+    glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex->id);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    bg_tex->LoadSubImage(1 - 1, get_asset(14));
+    bg_tex->LoadSubImage(2 - 1, get_asset(22));
+    bg_tex->LoadSubImage(3 - 1, get_asset(22));
+    bg_tex->LoadSubImage(4 - 1, get_asset(19));
+    bg_tex->LoadSubImage(5 - 1, get_asset(19));
+    bg_tex->LoadSubImage(6 - 1, get_asset(15));
+    bg_tex->LoadSubImage(7 - 1, get_asset(13));
+    bg_tex->LoadSubImage(8 - 1, get_asset(13));
+    bg_tex->LoadSubImage(9 - 1, get_asset(16));
+    bg_tex->LoadSubImage(10 - 1, get_asset(17));
+    bg_tex->LoadSubImage(11 - 1, get_asset(16));
+    bg_tex->LoadSubImage(12 - 1, get_asset(26));
+    bg_tex->LoadSubImage(13 - 1, get_asset(11));
+    bg_tex->LoadSubImage(14 - 1, get_asset(12));
+    bg_tex->LoadSubImage(15 - 1, get_asset(20));
+    bg_tex->LoadSubImage(16 - 1, get_asset(18));
+    bg_tex->LoadSubImage(17 - 1, get_asset(23));
+    bg_tex->LoadSubImage(18 - 1, get_asset(24));
+    bg_tex->LoadSubImage(19 - 1, get_asset(21));
+
+    for(size_t i = 0; i < 5; i++) {
+        maps[i] = Map(get_asset(mapIds[i]));
+    }
+
+    for(auto el : spriteMapping) {
+        sprites[el.tile_id] = parse_sprite(get_asset(el.asset_id));
+    }
+
+    uvs = parse_uvs(get_asset(254));
+
+    updateRender();
+
+    ImGui::CloseCurrentPopup();
+    return true;
+}
+
+static void load_game_dialog() {
+    std::string path;
+    auto result = NFD::OpenDialog({ { "Game", { ".exe" } } }, "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well", path, window);
+    if(result == NFD::Result::Error) {
+        ErrorDialog.push(NFD::GetError());
+    } else if(result == NFD::Result::Okay) {
+        load_game(path);
+    }
+}
 
 static void DrawUvFlags(uv_data& uv) {
     if(ImGui::BeginTable("uv_flags_table", 2)) {
@@ -675,273 +645,354 @@ static void DrawUvFlags(uv_data& uv) {
     }
 }
 
-static void DrawSpriteWindow() {
-    if(!ImGui::Begin("Sprite Viewer")) {
+class {
+    int selected_animation = 0;
+    bool playing = false;
+    int frame_step = 0;
+    int selected_composition = 0;
+    int selected_sprite = 0;
+
+   public:
+
+    void draw() {
+        if(!ImGui::Begin("Sprite Viewer")) {
+            ImGui::End();
+            return;
+        }
+        if(ImGui::InputInt("Id", &selected_sprite)) {
+            select(selected_sprite);
+        }
+
+        auto tile_id = spriteMapping[selected_sprite].tile_id;
+        auto& sprite = sprites[tile_id];
+        auto& uv = uvs[tile_id];
+
+        ImGui::InputScalarN("Composite size", ImGuiDataType_U16, &sprite.composite_size, 2);
+        ImGui::InputScalar("Layer count", ImGuiDataType_U16, &sprite.layer_count);
+        ImGui::InputScalar("Composite count", ImGuiDataType_U16, &sprite.composition_count);
+        ImGui::InputScalar("Subsprite count", ImGuiDataType_U16, &sprite.subsprite_count);
+        ImGui::InputScalar("Animation count", ImGuiDataType_U16, &sprite.animation_count);
+
+        ImGui::NewLine();
+        if(ImGui::SliderInt("animation", &selected_animation, 0, std::max(0, sprite.animation_count - 1)) && playing) {
+            selected_composition = sprite.animations[selected_animation].start;
+        }
+        if(sprite.animation_count != 0) {
+            auto& anim = sprite.animations[selected_animation];
+            ImGui::InputScalar("start", ImGuiDataType_U16, &anim.start);
+            ImGui::InputScalar("end", ImGuiDataType_U16, &anim.end);
+            ImGui::InputScalar("frame_delay", ImGuiDataType_U16, &anim.frame_delay);
+
+            if(playing) {
+                frame_step++;
+                if(frame_step / 5 > anim.frame_delay) {
+                    selected_composition++;
+                    if(selected_composition > anim.end) {
+                        selected_composition = anim.start;
+                    }
+                    frame_step = 0;
+                }
+
+                if(ImGui::Button("Pause")) playing = false;
+            } else {
+                if(ImGui::Button("Play")) {
+                    playing = true;
+                    selected_composition = anim.start;
+                    frame_step = 0;
+                }
+            }
+        }
+        ImGui::SliderInt("composition", &selected_composition, 0, sprite.composition_count - 1);
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        auto pos = glm::vec2(p.x, p.y);
+
+        // draw_list->AddCallback([](const ImDrawList* parent_list, const ImDrawCmd* cmd) { }, nullptr);
+
+        auto atlasSize = glm::vec2(atlas->width, atlas->height);
+        for(int j = 0; j < sprite.layer_count; ++j) {
+            auto subsprite_id = sprite.compositions[selected_composition * sprite.layer_count + j];
+            if(subsprite_id >= sprite.subsprite_count)
+                continue;
+
+            auto& layer = sprite.layers[j];
+            if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
+
+            auto& subsprite = sprite.sub_sprites[subsprite_id];
+
+            auto aUv = glm::vec2(uv.pos + subsprite.atlas_pos);
+            auto size = glm::vec2(subsprite.size);
+            auto ap = pos + glm::vec2(subsprite.composite_pos) * 8.0f;
+
+            draw_list->AddImage((ImTextureID)atlas->id.value, toImVec(ap), toImVec(ap + glm::vec2(subsprite.size) * 8.0f), toImVec(aUv / atlasSize), toImVec((aUv + size) / atlasSize));
+        }
+
+        // draw_list->AddCallback()
+
         ImGui::End();
-        return;
     }
 
-    static int selectedSprite = 0;
-    static int selected_animation = 0;
-    static bool playing = false;
-    static int frame_step = 0;
-    static int selected_composition = 0;
-
-    if(ImGui::InputInt("Id", &selectedSprite)) {
-        if(selectedSprite >= 158) {
-            selectedSprite = 0;
-        }
+    void select(int id) {
+        selected_sprite = std::clamp(id, 0, 157);
         selected_animation = 0;
         selected_composition = 0;
         playing = false;
         frame_step = 0;
     }
 
-    auto tile_id = spriteMapping[selectedSprite].tile_id;
-    auto& sprite = sprites[tile_id];
-    auto& uv = uvs[tile_id];
+    void select_from_tile(int tile_id) {
+        // todo: lazy implementation could be improved with map
+        auto spriteId = std::ranges::find(spriteMapping, tile_id, [](const TileMapping t) { return t.tile_id; })->internal_id;
+        select(spriteId);
+    }
 
-    ImGui::InputScalarN("Composite size", ImGuiDataType_U16, &sprite.composite_size, 2);
-    ImGui::InputScalar("Layer count", ImGuiDataType_U16, &sprite.layer_count);
-    ImGui::InputScalar("Composite count", ImGuiDataType_U16, &sprite.composition_count);
-    ImGui::InputScalar("Subsprite count", ImGuiDataType_U16, &sprite.subsprite_count);
-    ImGui::InputScalar("Animation count", ImGuiDataType_U16, &sprite.animation_count);
+    void focus() {
+        ImGui::FocusWindow(ImGui::FindWindowByName("Sprite Viewer"));
+    }
+} SpriteViewer;
 
-    ImGui::NewLine();
-    ImGui::SliderInt("animation", &selected_animation, 0, sprite.animation_count - 1);
-    if(sprite.animation_count != 0) {
-        auto& anim = sprite.animations[selected_animation];
-        ImGui::InputScalar("start", ImGuiDataType_U16, &anim.start);
-        ImGui::InputScalar("end", ImGuiDataType_U16, &anim.end);
-        ImGui::InputScalar("frame_delay", ImGuiDataType_U16, &anim.frame_delay);
+class {
+   public:
+    int selected_tile;
 
-        if(playing) {
-            frame_step++;
-            if(frame_step / 5 > anim.frame_delay) {
-                selected_composition++;
-                if(selected_composition > anim.end) {
-                    selected_composition = anim.start;
-                }
-                frame_step = 0;
-            }
-
-            if(ImGui::Button("Pause")) playing = false;
-        } else {
-            if(ImGui::Button("Play")) {
-                playing = true;
-                selected_composition = anim.start;
-                frame_step = 0;
-            }
+    void draw() {
+        if(!ImGui::Begin("Tile Viewer")) {
+            ImGui::End();
+            return;
         }
-    }
-    ImGui::SliderInt("composition", &selected_composition, 0, sprite.composition_count - 1);
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    auto pos = glm::vec2(p.x, p.y);
+        ImGui::InputInt("Id", &selected_tile);
+        selected_tile = std::clamp(selected_tile, 0, (int)uvs.size() - 1);
 
-    // draw_list->AddCallback([](const ImDrawList* parent_list, const ImDrawCmd* cmd) { }, nullptr);
+        auto& uv = uvs[selected_tile];
 
-    auto atlasSize = glm::vec2(atlas->width, atlas->height);
-    for(int j = 0; j < sprite.layer_count; ++j) {
-        auto subsprite_id = sprite.compositions[selected_composition * sprite.layer_count + j];
-        if(subsprite_id >= sprite.subsprite_count)
-            continue;
-
-        auto& layer = sprite.layers[j];
-        if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
-
-        auto& subsprite = sprite.sub_sprites[subsprite_id];
-
-        auto aUv = glm::vec2(uv.pos + subsprite.atlas_pos);
-        auto size = glm::vec2(subsprite.size);
-        auto ap = pos + glm::vec2(subsprite.composite_pos) * 8.0f;
-
-        draw_list->AddImage((ImTextureID)atlas->id.value, toImVec(ap), toImVec(ap + glm::vec2(subsprite.size) * 8.0f), toImVec(aUv / atlasSize), toImVec((aUv + size) / atlasSize));
-    }
-
-    // draw_list->AddCallback()
-
-    ImGui::End();
-}
-
-static void DrawTileWindow() {
-    if(!ImGui::Begin("Tile Viewer")) {
-        ImGui::End();
-        return;
-    }
-
-    static int selectedTile = 0;
-    ImGui::InputInt("Id", &selectedTile);
-    if(selectedTile >= uvs.size()) {
-        selectedTile = 0;
-    }
-
-    auto& uv = uvs[selectedTile];
-
-    // bool is_sprite = sprites.contains(selectedTile);
-    bool is_sprite = false;
-
-    if(!is_sprite) {
         auto pos = glm::vec2(uv.pos);
         auto size = glm::vec2(uv.size);
         auto atlas_size = glm::vec2(atlas->width, atlas->height);
 
         ImGui::Text("preview");
         ImGui::Image((ImTextureID)atlas->id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
-    } else {
-        /*
-        ImGuiWindow* window = ImGui::GetCurrentWindow();
 
-        const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + image_size);
-        ImGui::ItemSize(bb);
-        if(!ImGui::ItemAdd(bb, 0))
-            return;
+        DrawUvFlags(uv);
 
-        // Render
-        window->DrawList->AddImage(user_texture_id, bb.Min + padding, bb.Max - padding, uv0, uv1);
-        */
+        ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
+        ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
+
+        if(sprites.contains(selected_tile)) {
+            auto spriteId = std::ranges::find(spriteMapping, selected_tile, [](const TileMapping t) { return t.tile_id; })->internal_id;
+
+            ImGui::NewLine();
+            ImGui::Text("Sprite id %i", spriteId);
+            if(ImGui::Button("Open in Sprite Viewer")) {
+                SpriteViewer.select(spriteId);
+                SpriteViewer.focus();
+            }
+        }
+
+        ImGui::End();
     }
 
-    DrawUvFlags(uv);
+    void focus() {
+        ImGui::FocusWindow(ImGui::FindWindowByName("Tile Viewer"));
+    }
+} TileViewer;
 
-    ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
-    ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
+class {
+    int tile_id;
+    std::vector<glm::ivec3> results;
+    ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
+    bool show_on_map;
 
-    ImGui::End();
-}
+   public:
+    void draw() {
+        auto& map = maps[selectedMap];
 
-static void DrawFindWindow() {
-    static int tile_id;
-    static std::vector<glm::ivec3> results;
-    static ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
-    static bool show_on_map;
+        if(ImGui::Begin("Search")) {
+            ImGui::InputInt("tile_id", &tile_id);
 
-    auto& map = maps[selectedMap];
+            if(ImGui::Button("Search")) {
+                results.clear();
 
-    if(ImGui::Begin("Search")) {
-        ImGui::InputInt("tile_id", &tile_id);
+                for(auto& room : map.rooms) {
+                    for(int y2 = 0; y2 < 22; y2++) {
+                        for(int x2 = 0; x2 < 40; x2++) {
+                            auto tile1 = room.tiles[0][y2][x2];
+                            if(tile1.tile_id == tile_id) {
+                                results.emplace_back(room.x * 40 + x2, room.y * 22 + y2, 0);
+                            }
 
-        if(ImGui::Button("Search")) {
-            results.clear();
-
-            for(auto& room : map.rooms) {
-                for(int y2 = 0; y2 < 22; y2++) {
-                    for(int x2 = 0; x2 < 40; x2++) {
-                        auto tile1 = room.tiles[0][y2][x2];
-                        if(tile1.tile_id == tile_id) {
-                            results.emplace_back(room.x * 40 + x2, room.y * 22 + y2, 0);
-                        }
-
-                        auto tile2 = room.tiles[1][y2][x2];
-                        if(tile2.tile_id == tile_id) {
-                            results.emplace_back(room.x * 40 + x2, room.y * 22 + y2, 1);
+                            auto tile2 = room.tiles[1][y2][x2];
+                            if(tile2.tile_id == tile_id) {
+                                results.emplace_back(room.x * 40 + x2, room.y * 22 + y2, 1);
+                            }
                         }
                     }
                 }
             }
-        }
-        if(ImGui::Button("Clear")) {
-            results.clear();
-        }
-        ImGui::Checkbox("Highlight", &show_on_map);
-
-        const float TEXT_BASE_HEIGHT = ImGui::GetTextLineHeightWithSpacing();
-        // When using ScrollX or ScrollY we need to specify a size for our table container!
-        // Otherwise by default the table will fit all available space, like a BeginChild() call.
-        ImVec2 outer_size = ImVec2(0.0f, TEXT_BASE_HEIGHT * 8);
-        if(ImGui::BeginTable("search_results", 3, flags, outer_size)) {
-            ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
-            ImGui::TableSetupColumn("x", ImGuiTableColumnFlags_None);
-            ImGui::TableSetupColumn("y", ImGuiTableColumnFlags_None);
-            ImGui::TableSetupColumn("layer", ImGuiTableColumnFlags_None);
-            ImGui::TableHeadersRow();
-
-            // Demonstrate using clipper for large vertical lists
-            ImGuiListClipper clipper;
-            clipper.Begin(results.size());
-            while(clipper.Step()) {
-                for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
-                    ImGui::TableNextRow();
-
-                    auto el = results[row];
-
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("%i", el.x);
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%i", el.y);
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%i", el.z);
-                }
+            if(ImGui::Button("Clear")) {
+                results.clear();
             }
-            ImGui::EndTable();
+            ImGui::Checkbox("Highlight", &show_on_map);
+
+            const float TEXT_BASE_HEIGHT = ImGui::GetTextLineHeightWithSpacing();
+            // When using ScrollX or ScrollY we need to specify a size for our table container!
+            // Otherwise by default the table will fit all available space, like a BeginChild() call.
+            ImVec2 outer_size = ImVec2(0.0f, TEXT_BASE_HEIGHT * 8);
+
+            ImGui::Text("%i results", results.size());
+            if(ImGui::BeginTable("search_results", 3, flags, outer_size)) {
+                ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
+                ImGui::TableSetupColumn("x", ImGuiTableColumnFlags_None);
+                ImGui::TableSetupColumn("y", ImGuiTableColumnFlags_None);
+                ImGui::TableSetupColumn("layer", ImGuiTableColumnFlags_None);
+                ImGui::TableHeadersRow();
+
+                // Demonstrate using clipper for large vertical lists
+                ImGuiListClipper clipper;
+                clipper.Begin(results.size());
+                while(clipper.Step()) {
+                    for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
+                        ImGui::TableNextRow();
+
+                        auto el = results[row];
+
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("%i", el.x);
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text("%i", el.y);
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%i", el.z);
+                    }
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::End();
+
+        if(show_on_map) {
+            for(auto result : results) {
+                auto tile = map.getTile(result.z, result.x, result.y);
+                if(!tile.has_value())
+                    continue;
+
+                auto uv = uvs[tile->tile_id];
+
+                DrawRect(selectionVerts, glm::vec2(result.x * 8, result.y * 8),  glm::vec2(uv.size), {1, 0, 0, 0.8f}, 8 / gScale);
+            }
         }
     }
-    ImGui::End();
 
-    if(show_on_map) {
-        for(auto result : results) {
-            auto tile = map.getTile(result.z, result.x, result.y);
-            if(!tile.has_value())
-                continue;
+} SearchWindow;
 
-            auto uv = uvs[tile->tile_id];
+class {
+    std::vector<std::tuple<int, glm::vec2, glm::vec2>> tiles_;
 
-            DrawRect(selectionVerts, glm::vec2(result.x * 8, result.y * 8),  glm::vec2(uv.size), {1, 0, 0, 0.8f}, 8 / gScale);
+   public:
+    void draw() {
+        if(!ImGui::Begin("Tile List")) {
+            ImGui::End();
+            return;
         }
+
+        if(tiles_.empty()) {
+            auto atlas_size = glm::vec2(atlas->width, atlas->height);
+
+            for(int i = 0; i < uvs.size(); ++i) {
+                auto uv = uvs[i];
+                if(uv.size == glm::u16vec2(0)) {
+                    continue;
+                }
+                tiles_.emplace_back(i, glm::vec2(uv.pos) / atlas_size, glm::vec2(uv.size) / atlas_size);
+            }
+
+            std::ranges::stable_sort(tiles_, {}, [](const auto el) { return std::get<2>(el).x * std::get<2>(el).y; });
+        }
+
+        auto width = ImGui::GetCurrentWindow()->WorkRect.GetWidth();
+        auto pad = ImGui::GetStyle().FramePadding.x;
+
+        for(const auto& [id, pos, size] : tiles_) {
+            ImGui::SetItemTooltip("%i", id);
+            ImGui::PushID(id);
+            if(ImGui::ImageButton((ImTextureID)atlas->id.value, ImVec2(32, 32), toImVec(pos), toImVec(pos + size))) {
+                TileViewer.selected_tile = id;
+                TileViewer.focus();
+            }
+            ImGui::PopID();
+            ImGui::SameLine();
+
+            auto x = ImGui::GetCursorPosX();
+            if(x + 32 + pad >= width) {
+                ImGui::NewLine();
+            }
+        }
+
+        ImGui::End();
     }
-}
+} TileList;
 
-static void DumpAssets() {
-    std::filesystem::create_directory("assets");
+static void dump_assets() {
+    std::string path;
+    auto result = NFD::PickFolder(std::filesystem::current_path().string().c_str(), path, window);
+    if(result != NFD::Result::Okay) {
+        return;
+    }
 
-    auto sections = getSegmentOffsets(rawData);
-    auto assets = std::span((asset_entry*)sections.data.data(), 676);
+    try {
+        std::filesystem::create_directories(path);
 
-    std::vector<uint8_t> decrypted;
+        auto sections = getSegmentOffsets(rawData);
+        auto assets = std::span((asset_entry*)sections.data.data(), 676);
 
-    for(int i = 0; i < assets.size(); ++i) {
-        auto& item = assets[i];
+        std::vector<uint8_t> decrypted;
 
-        std::string ext = ".bin";
-        switch(item.type) {
-            case AssetType::Text:
-                ext = ".txt";
-                break;
-            case AssetType::MapData:
-            case AssetType::Encrypted_MapData:
-                ext = ".map";
-                break;
-            case AssetType::Png:
-            case AssetType::Encrypted_Png:
-                ext = ".png";
-                break;
-            case AssetType::Ogg:
-            case AssetType::Encrypted_Ogg:
-                ext = ".ogg";
-                break;
-            case AssetType::SpriteData:
-                ext = ".sprite";
-                break;
-            case AssetType::Shader:
-                ext = ".shader";
-                break;
-            case AssetType::Font:
-                ext = ".font";
-                break;
-            case AssetType::Encrypted_XPS:
-                ext = ".xps";
-                break;
+        for(int i = 0; i < assets.size(); ++i) {
+            auto& item = assets[i];
+
+            std::string ext = ".bin";
+            switch(item.type) {
+                case AssetType::Text:
+                    ext = ".txt";
+                    break;
+                case AssetType::MapData:
+                case AssetType::Encrypted_MapData:
+                    ext = ".map";
+                    break;
+                case AssetType::Png:
+                case AssetType::Encrypted_Png:
+                    ext = ".png";
+                    break;
+                case AssetType::Ogg:
+                case AssetType::Encrypted_Ogg:
+                    ext = ".ogg";
+                    break;
+                case AssetType::SpriteData:
+                    ext = ".sprite";
+                    break;
+                case AssetType::Shader:
+                    ext = ".shader";
+                    break;
+                case AssetType::Font:
+                    ext = ".font";
+                    break;
+                case AssetType::Encrypted_XPS:
+                    ext = ".xps";
+                    break;
+            }
+
+            auto dat = sections.rdata.subspan(item.ptr - sections.rdata_pointer_offset, item.length);
+
+            std::ofstream file("assets/" + std::to_string(i) + ext, std::ios::binary);
+            if(tryDecrypt(item, dat, decrypted)) {
+                file.write((char*)decrypted.data(), decrypted.size());
+            } else {
+                file.write((char*)dat.data(), dat.size());
+            }
+            file.close();
         }
-
-        auto dat = sections.rdata.subspan(item.ptr - sections.rdata_pointer_offset, item.length);
-
-        std::ofstream file("assets/" + std::to_string(i) + ext, std::ios::binary);
-        if(tryDecrypt(item, dat, decrypted)) {
-            file.write((char*)decrypted.data(), decrypted.size());
-        } else {
-            file.write((char*)dat.data(), dat.size());
-        }
+    } catch(std::exception& e) {
+        ErrorDialog.push(e.what());
     }
 }
 
@@ -1017,59 +1068,85 @@ static void randomize() {
 }
 
 static void export_exe(bool patch_renderdoc) {
-    auto out = rawData;
+    std::string path;
+    auto result = NFD::SaveDialog({ { "Game", {".exe"} } }, std::filesystem::current_path().string().c_str(), path, window);
 
-    auto sections = getSegmentOffsets(out);
-    auto assets = std::span((asset_entry*)sections.data.data(), 676);
-
-    auto replaceAsset = [&](const std::vector<uint8_t>& data, int id) {
-        auto& asset = assets[id];
-        auto ptr = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
-
-        if(((uint8_t)asset.type & 192) == 64) {
-            int key = 0; // 193, 212, 255, 300
-            if(id == 30 || id == 52) key = 1;
-            else if(id == 222 || id == 277 || id == 377) key = 2;
-
-            auto enc = encrypt(data, key);
-
-            assert(enc.size() == asset.length);
-            // asset.length = dat.size();
-            std::memcpy(ptr.data(), enc.data(), enc.size());
-        } else {
-            assert(data.size() == asset.length);
-            // asset.length = data.size();
-            std::memcpy(ptr.data(), data.data(), data.size());
-        }
-    };
-
-    for(size_t i = 0; i < 5; i++) {
-        replaceAsset(maps[i].save(), mapIds[i]);
+    if(result == NFD::Result::Error) {
+        ErrorDialog.push(NFD::GetError());
+        return;
     }
-    replaceAsset(save_uvs(uvs), 254);
-
-    /*if(patch_steam) {
-        // patch steam restart
-        out[0xEFE6] = 0x48; // MOV AL, 0
-        out[0xEFE7] = 0xc6;
-        out[0xEFE8] = 0xc0;
-        out[0xEFE9] = 0x00;
-
-        out[0xEFEA] = 0x48; // NOP
-        out[0xEFEB] = 0x90;
-    }*/
-
-    if(patch_renderdoc) {
-        const char renderDocPattern[14] = "renderdoc.dll";
-        auto res = std::search(out.begin(), out.end(), std::begin(renderDocPattern), std::end(renderDocPattern));
-
-        if(res != out.end()) {
-            *res = 'l'; // replace first letter with 'l'
-        }
+    if(result == NFD::Result::Cancel) {
+        return;
     }
 
-    std::ofstream file("Animal Well.exe", std::ios::binary);
-    file.write(out.data(), out.size());
+    try {
+        auto out = rawData;
+        auto sections = getSegmentOffsets(out);
+        auto assets = std::span((asset_entry*)sections.data.data(), 676);
+
+        bool error = false;
+
+        auto replaceAsset = [&](const std::vector<uint8_t>& data, int id) {
+            auto& asset = assets[id];
+            auto ptr = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+
+            if(((uint8_t)asset.type & 192) == 64) {
+                int key = 0; // 193, 212, 255, 300
+                if(id == 30 || id == 52) key = 1;
+                else if(id == 222 || id == 277 || id == 377) key = 2;
+
+                auto enc = encrypt(data, key);
+
+                if(enc.size() > asset.length) {
+                    error = true;
+                    ErrorDialog.pushf("Failed to save asset %i because it was too big", id);
+                } else {
+                    // asset.length = enc.size(); // keep default value cause game doesn't really use length anyway
+                    std::memcpy(ptr.data(), enc.data(), enc.size());
+                }
+            } else {
+                if(data.size() > asset.length) {
+                    error = true;
+                    ErrorDialog.pushf("Failed to save asset %i because it was too big", id);
+                } else {
+                    std::memcpy(ptr.data(), data.data(), data.size());
+                }
+            }
+        };
+
+        for(size_t i = 0; i < 5; i++) {
+            replaceAsset(maps[i].save(), mapIds[i]);
+        }
+        replaceAsset(save_uvs(uvs), 254);
+
+        /*if(patch_steam) {
+            // patch steam restart
+            out[0xEFE6] = 0x48; // MOV AL, 0
+            out[0xEFE7] = 0xc6;
+            out[0xEFE8] = 0xc0;
+            out[0xEFE9] = 0x00;
+
+            out[0xEFEA] = 0x48; // NOP
+            out[0xEFEB] = 0x90;
+        }*/
+
+        if(patch_renderdoc) {
+            const char renderDocPattern[14] = "renderdoc.dll";
+            auto res = std::search(out.begin(), out.end(), std::begin(renderDocPattern), std::end(renderDocPattern));
+
+            if(res != out.end()) {
+                *res = 'l'; // replace first letter with 'l'
+            }
+        }
+
+        if(!error) {
+            std::ofstream file("Animal Well.exe", std::ios::binary);
+            file.write(out.data(), out.size());
+        }
+    } catch(std::exception& e) {
+        ErrorDialog.push(e.what());
+    }
+
 }
 
 // Tips: Use with ImGuiDockNodeFlags_PassthruCentralNode!
@@ -1102,21 +1179,62 @@ ImGuiID DockSpaceOverViewport() {
 
     if(ImGui::BeginMenuBar()) {
         if(ImGui::BeginMenu("File")) {
-            if(ImGui::MenuItem("Load")) {
-                LoadFileDialog.open();
+            if(ImGui::MenuItem("Load Game")) {
+                load_game_dialog();
             }
             if(ImGui::MenuItem("Dump assets")) {
-                DumpAssets();
+                dump_assets();
             }
-            /*if(ImGui::MenuItem("Export assets")) {
 
-            }*/
             ImGui::Separator();
             static bool patch_renderdoc = false;
             ImGui::Checkbox("patch renderdoc", &patch_renderdoc);
             if(ImGui::MenuItem("Export exe")) {
                 export_exe(patch_renderdoc);
             }
+
+            ImGui::Separator();
+
+            if(ImGui::MenuItem("Load Map")) {
+                std::string path;
+                auto result = NFD::OpenDialog({ {"Map", {".map"}} }, std::filesystem::current_path().string().c_str(), path, window);
+
+                if(result == NFD::Result::Error) {
+                    ErrorDialog.push(NFD::GetError());
+                } else if(result == NFD::Result::Okay) {
+                    try {
+                        auto data = readFile(path.c_str());
+                        auto map = Map(std::span((uint8_t*)data.data(), data.size()));
+
+                        if(map.coordinate_map == maps[selectedMap].coordinate_map) {
+                            maps[selectedMap] = map;
+                            updateRender();
+                        } else {
+                            ErrorDialog.push("Map structure differs from currently loaded map.\nTry loading from a different slot.");
+                        }
+                    } catch(std::exception& e) {
+                        ErrorDialog.push(e.what());
+                    }
+                }
+            }
+            if(ImGui::MenuItem("Export Map")) {
+                std::string path;
+                auto result = NFD::SaveDialog({ { "Map", {".map" }} }, std::filesystem::current_path().string().c_str(), path, window);
+
+                if(result == NFD::Result::Error) {
+                    ErrorDialog.push(NFD::GetError());
+                } else if(result == NFD::Result::Okay) {
+                    auto data = maps[selectedMap].save();
+                    try {
+                        std::ofstream file(path, std::ios::binary);
+                        file.write((char*)data.data(), data.size());
+                        file.close();
+                    } catch(std::exception& e) {
+                        ErrorDialog.push(e.what());
+                    }
+                }
+            }
+
             ImGui::EndMenu();
         }
 
@@ -1169,6 +1287,7 @@ ImGuiID DockSpaceOverViewport() {
         // we now dock our windows into the docking node we made above
         ImGui::DockBuilderDockWindow("Sprite Viewer", right);
         ImGui::DockBuilderDockWindow("Tile Viewer", right);
+        ImGui::DockBuilderDockWindow("Tile List", right);
         ImGui::DockBuilderDockWindow("Search", right);
         ImGui::DockBuilderDockWindow("Properties", right);
         ImGui::DockBuilderFinish(dockspace_id);
@@ -1245,35 +1364,6 @@ static void DrawPreviewWindow() {
             ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
             ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
 
-            ImGui::Separator();
-
-            static std::string room_file_name = "roomname.rm";
-
-            ImGui::InputText("path", &room_file_name);
-
-            if (ImGui::Button("Export Room")) { try {
-                std::ofstream file(room_file_name, std::ios::binary);
-                file.exceptions(std::ios::failbit);
-                file.write((char*)room, sizeof(Room));
-                file.close();
-            } catch (std::system_error& err) {
-                std::cerr << "room export error: " << err.code().message() << std::endl;
-            } }
-
-            if (ImGui::Button("Import Room")) { try {
-                std::ifstream file(room_file_name, std::ios::binary);
-                file.exceptions(std::ios::failbit);
-                uint8_t x = room->x;
-                uint8_t y = room->y;
-                file.read((char*)room, sizeof(Room));
-                file.close();
-                room->x = x;
-                room->y = y;
-                updateRender();
-            } catch (std::system_error& err) {
-                std::cerr << "room import error: " << err.code().message() << std::endl;
-            } }
-
             auto tp = glm::ivec2(glm::mod(glm::vec2(asdasd), glm::vec2(room_size)));
             auto tile = room->tiles[0][tp.y][tp.x];
             int tile_layer = 0;
@@ -1328,14 +1418,15 @@ static void DrawPreviewWindow() {
 
             if(sprites.contains(tile.tile_id)) {
                 auto sprite = sprites[tile.tile_id];
+                // todo: lazy implementation could be improved with map
+                auto spriteId = std::ranges::find(spriteMapping, tile.tile_id, [](const TileMapping t) { return t.tile_id; })->internal_id;
 
                 ImGui::NewLine();
-                ImGui::Text("sprite");
-                ImGui::Text("composite_size %i %i", sprite.composite_size.x, sprite.composite_size.y);
-                ImGui::Text("layer_count %i", sprite.layer_count);
-                ImGui::Text("composition_count %i", sprite.composition_count);
-                ImGui::Text("subsprite_count %i", sprite.subsprite_count);
-                ImGui::Text("animation_count %i", sprite.animation_count);
+                ImGui::Text("Sprite id %i", spriteId);
+                if(ImGui::Button("Open in Sprite Viewer")) {
+                    SpriteViewer.select_from_tile(tile.tile_id);
+                    SpriteViewer.focus();
+                }
 
                 auto bb_max = pos + glm::vec2(8, 8);
 
@@ -1603,10 +1694,10 @@ int runViewer() {
 
 #pragma endregion
 
-    if(!LoadFileDialog.tryLoad()) {
-        LoadFileDialog.error_msg = "";
-        LoadFileDialog.open();
+    if(!load_game("C:/Program Files (x86)/Steam/steamapps/common/Animal Well/Animal Well.exe")) {
+        load_game("./Animal Well.exe");
     }
+    ErrorDialog.clear();
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -1627,14 +1718,15 @@ int runViewer() {
         MVP = projection * view;
 
         DockSpaceOverViewport();
-        LoadFileDialog.draw();
+        ErrorDialog.draw();
         // ImGui::ShowDemoWindow();
 
         // skip rendering if no data is loaded
         if(!rawData.empty()) {
-            DrawTileWindow();
-            DrawFindWindow();
-            DrawSpriteWindow();
+            SearchWindow.draw();
+            TileList.draw();
+            TileViewer.draw();
+            SpriteViewer.draw();
             DrawPreviewWindow();
 
             // 1. light pass
