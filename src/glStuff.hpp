@@ -1,20 +1,20 @@
 #pragma once
 
 #include <fstream>
+#include <span>
 #include <sstream>
 #include <string>
-#include <span>
 
 #include <glad/gl.h>
-#include <stb_image.h>
 #include <glm/glm.hpp>
+#include <stb_image.h>
 
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(shaders);
 
 #include "windows/errors.hpp"
 
-template <typename T>
+template<typename T>
 struct Unique {
     T value;
 
@@ -109,7 +109,7 @@ struct Texture {
     void Load(const std::vector<uint8_t>& data) {
         int n;
         auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
-        if (dat == nullptr) {
+        if(dat == nullptr) {
             throw std::runtime_error("missing texture");
         }
 
@@ -217,7 +217,7 @@ struct ShaderProgram {
         glCompileShader(vertex);
         // print compile errors if any
         glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
-        if (!success) {
+        if(!success) {
             glGetShaderInfoLog(vertex, 512, nullptr, infoLog);
             ErrorDialog.pushf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
         }
@@ -228,7 +228,7 @@ struct ShaderProgram {
         glCompileShader(fragment);
         // print compile errors if any
         glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
-        if (!success) {
+        if(!success) {
             glGetShaderInfoLog(fragment, 512, nullptr, infoLog);
             ErrorDialog.pushf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
         }
@@ -240,7 +240,7 @@ struct ShaderProgram {
         glLinkProgram(ID);
         // print linking errors if any
         glGetProgramiv(ID, GL_LINK_STATUS, &success);
-        if (!success) {
+        if(!success) {
             glGetProgramInfoLog(ID, 512, nullptr, infoLog);
             ErrorDialog.pushf("ERROR::SHADER::PROGRAM::LINKING_FAILED\n%s\n", infoLog);
         }

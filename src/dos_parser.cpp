@@ -76,7 +76,7 @@ struct Characteristics {
     bool symbolsStripped : 1;
     bool aggressivelyTrimWorkingSet : 1;
     bool largeAddressAware : 1;
-    bool : 1;  // padding
+    bool : 1; // padding
     bool bytesReversedLo : 1;
     bool machine32Bit : 1;
     bool debugInfoStripped : 1;
@@ -256,11 +256,11 @@ SegmentData getSegmentOffsets(std::span<char> data) {
     std::span<uint8_t> rdata;
     uint64_t rdata_offset = -1;
 
-    for (size_t i = 0; i < coff_header_ptr->numberOfSections; i++) {
+    for(size_t i = 0; i < coff_header_ptr->numberOfSections; i++) {
         auto& section = section_ptr[i];
-        if (std::strcmp(section.name, ".data") == 0) {
+        if(std::strcmp(section.name, ".data") == 0) {
             dat = std::span(ptr + section.ptrRawData, section.sizeOfRawData);
-        } else if (std::strcmp(section.name, ".rdata") == 0) {
+        } else if(std::strcmp(section.name, ".rdata") == 0) {
             rdata = std::span(ptr + section.ptrRawData, section.sizeOfRawData);
             rdata_offset = section.rva + image_base;
         }
@@ -269,6 +269,6 @@ SegmentData getSegmentOffsets(std::span<char> data) {
     return {
         dat,
         rdata_offset,
-        rdata
+        rdata,
     };
 }

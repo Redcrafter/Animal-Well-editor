@@ -2,19 +2,20 @@
 
 #include <cstdint>
 #include <span>
+
 #include <glm/glm.hpp>
 
 struct SpriteAnimation {
-    uint16_t start;        // First composition in the animation
-    uint16_t end;          // Last composition in the animation
-    uint16_t frame_delay;  // After waiting this many frames, increment the composition number
+    uint16_t start;       // First composition in the animation
+    uint16_t end;         // Last composition in the animation
+    uint16_t frame_delay; // After waiting this many frames, increment the composition number
 };
 static_assert(sizeof(SpriteAnimation) == 6);
 
 struct SubSprite {
-    glm::u16vec2 atlas_pos;      // Atlas coordinates, relative to the entity's base coordinates
-    glm::u16vec2 composite_pos;  // Position of this subsprite on the composited sprite
-    glm::u16vec2 size;           // Size of the subsprite
+    glm::u16vec2 atlas_pos;     // Atlas coordinates, relative to the entity's base coordinates
+    glm::u16vec2 composite_pos; // Position of this subsprite on the composited sprite
+    glm::u16vec2 size;          // Size of the subsprite
 };
 static_assert(sizeof(SubSprite) == 12);
 
@@ -43,11 +44,10 @@ struct SpriteData {
     uint8_t animation_count;
 
     std::vector<SpriteAnimation> animations;
-    std::vector<uint8_t> compositions;  // are frames
+    std::vector<uint8_t> compositions; // are frames
     std::vector<SubSprite> sub_sprites;
     std::vector<SpriteLayer> layers;
 };
-
 
 struct TileMapping {
     int internal_id;
@@ -214,7 +214,7 @@ constexpr TileMapping spriteMapping[] = {
     {0x9a, 0x1c, 0x330},
     {0x9b, 0xa2, 0x333},
     {0x9c, 0xd9, 0x334},
-    {0x9d, 0xaf, 0x33e}
+    {0x9d, 0xaf, 0x33e},
 };
 
 SpriteData parse_sprite(std::span<const uint8_t> data) {
@@ -222,31 +222,31 @@ SpriteData parse_sprite(std::span<const uint8_t> data) {
     assert(data.size() >= 0x30);
     auto ptr = (char*)data.data();
 
-    auto magic = *(uint32_t *)ptr;
+    auto magic = *(uint32_t*)ptr;
     assert(magic == 0x0003AC1D);
 
     SpriteData out;
-    out.composite_size.x = *(uint16_t *)(ptr + 4);
-    out.composite_size.y = *(uint16_t *)(ptr + 6);
-    out.layer_count = *(uint16_t *)(ptr + 8);
-    out.composition_count = *(uint16_t *)(ptr + 10);
-    out.subsprite_count = *(uint8_t *)(ptr + 12);
-    out.animation_count = *(uint8_t *)(ptr + 13);
+    out.composite_size.x = *(uint16_t*)(ptr + 4);
+    out.composite_size.y = *(uint16_t*)(ptr + 6);
+    out.layer_count = *(uint16_t*)(ptr + 8);
+    out.composition_count = *(uint16_t*)(ptr + 10);
+    out.subsprite_count = *(uint8_t*)(ptr + 12);
+    out.animation_count = *(uint8_t*)(ptr + 13);
 
     assert(data.size() >= 0x30 + out.animation_count * sizeof(SpriteAnimation) + out.layer_count * out.composition_count + out.subsprite_count * sizeof(SubSprite) + out.layer_count * sizeof(SpriteLayer));
 
     ptr += 0x30;
 
-    out.animations = {(SpriteAnimation *)ptr, ((SpriteAnimation *)ptr) + out.animation_count};
+    out.animations = {(SpriteAnimation*)ptr, ((SpriteAnimation*)ptr) + out.animation_count};
     ptr += out.animation_count * sizeof(SpriteAnimation);
 
     out.compositions = {ptr, ptr + out.layer_count * out.composition_count};
     ptr += out.layer_count * out.composition_count;
 
-    out.sub_sprites = {(SubSprite *)ptr, ((SubSprite *)ptr) + out.subsprite_count};
+    out.sub_sprites = {(SubSprite*)ptr, ((SubSprite*)ptr) + out.subsprite_count};
     ptr += out.subsprite_count * sizeof(SubSprite);
 
-    out.layers = {(SpriteLayer *)ptr, (SpriteLayer *)(ptr + out.layer_count * sizeof(SpriteLayer))};
+    out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr + out.layer_count * sizeof(SpriteLayer))};
 
     return out;
 }

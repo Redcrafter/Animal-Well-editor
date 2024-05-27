@@ -1,0 +1,32 @@
+Language: Cpp
+IndentWidth: 4
+
+AlignTrailingComments:
+  Kind: Leave
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+ColumnLimit: 0
+# Cpp11BracedListStyle: false
+EmptyLineBeforeAccessModifier: LogicalBlock
+IndentCaseLabels: true
+PointerAlignment: Left
+ReferenceAlignment: Left
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions :
+  AfterControlStatements: false
+  AfterForeachMacros: false
+  AfterFunctionDeclarationName: false
+  AfterFunctionDefinitionName: false
+  AfterIfMacros: false
+  AfterOverloadedOperator: false
+  # AfterPlacementOperator: true
+  AfterRequiresInClause: false
+  AfterRequiresInExpression: false
+  BeforeNonEmptyParentheses: false
