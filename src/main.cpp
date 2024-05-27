@@ -471,6 +471,16 @@ static void DrawLine(std::vector<std::pair<glm::vec2, glm::vec4>>& verts, glm::v
     verts.emplace_back(glm::vec2{ p2.x + d.y, p2.y - d.x }, color); // tr
 }
 
+static void DrawFilledRect(std::vector<std::pair<glm::vec2, glm::vec4>>& verts, glm::vec2 min, glm::vec2 max, glm::vec4 color) {
+    verts.emplace_back(glm::vec2{ min.x, min.y }, color);
+    verts.emplace_back(glm::vec2{ min.x, max.y }, color);
+    verts.emplace_back(glm::vec2{ max.x, min.y }, color);
+
+    verts.emplace_back(glm::vec2{ max.x, max.y }, color);
+    verts.emplace_back(glm::vec2{ max.x, min.y }, color);
+    verts.emplace_back(glm::vec2{ min.x, max.y }, color);
+}
+
 static void DrawRect(std::vector<std::pair<glm::vec2, glm::vec4>>& verts, glm::vec2 pos, glm::vec2 size, glm::vec4 color, float thickness) {
     DrawLine(verts, pos, pos + glm::vec2(size.x, 0), color, thickness);
     DrawLine(verts, pos + glm::vec2(size.x, 0), pos + size, color, thickness);
@@ -1466,6 +1476,11 @@ static void DrawPreviewWindow() {
                 }
             }
             DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, {1, 1, 1, 0.5}, 1);
+            if (room->waterLevel < 176) {
+                auto water_min = room_pos * room_size * 8 + glm::ivec2(0, 176);
+                auto water_max = water_min + glm::ivec2(room_size.x * 8, (176-room->waterLevel) * -1);
+                DrawFilledRect(selectionVerts, water_min, water_max, {0, 0, 1, 0.3});
+            }
         }
     } else if(mode == 1) {
         static MapTile placing;
