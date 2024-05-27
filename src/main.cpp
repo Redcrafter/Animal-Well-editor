@@ -313,13 +313,15 @@ auto renderBgs(const Map& map) {
         auto rp = glm::vec2(room.x * 40 * 8, room.y * 22 * 8);
 
         if(room.bgId != 0) {
-            bg.push_back({rp, {0, 0, room.bgId - 1}}); // tl
+     // clang-format off
+            bg.push_back({rp                , {0, 0, room.bgId - 1}}); // tl
             bg.push_back({{rp.x + 320, rp.y}, {1, 0, room.bgId - 1}}); // tr
             bg.push_back({{rp.x, rp.y + 176}, {0, 1, room.bgId - 1}}); // bl
 
-            bg.push_back({{rp.x + 320, rp.y}, {1, 0, room.bgId - 1}});       // tr
+            bg.push_back({{rp.x + 320, rp.y      }, {1, 0, room.bgId - 1}}); // tr
             bg.push_back({{rp.x + 320, rp.y + 176}, {1, 1, room.bgId - 1}}); // br
-            bg.push_back({{rp.x, rp.y + 176}, {0, 1, room.bgId - 1}});       // bl
+            bg.push_back({{rp.x      , rp.y + 176}, {0, 1, room.bgId - 1}}); // bl
+     // clang-format on
         }
     }
     return bg;
@@ -439,25 +441,15 @@ static void RenderQuad() {
     static std::unique_ptr<VBO> quadVBO;
 
     if(quadVAO == nullptr) {
+ // clang-format off
         const float quadVertices[] = {
             // positions  // texture Coords
-            -1.0f,
-            1.0f,
-            0.0f,
-            1.0f,
-            -1.0f,
-            -1.0f,
-            0.0f,
-            0.0f,
-            1.0f,
-            1.0f,
-            1.0f,
-            1.0f,
-            1.0f,
-            -1.0f,
-            1.0f,
-            0.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f,
+             1.0f,  1.0f, 1.0f, 1.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
         };
+ // clang-format on
 
         quadVAO = std::make_unique<VAO>();
         quadVAO->Bind();
@@ -630,49 +622,35 @@ static void load_game_dialog() {
 static void DrawUvFlags(uv_data& uv) {
     if(ImGui::BeginTable("uv_flags_table", 2)) {
         uint32_t flags = uv.flags;
+ // clang-format off
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides right", &flags, 1 << 1); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Blocks Light", &flags, 1 << 8);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Collides right", &flags, 1 << 1); // correct
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Blocks Light", &flags, 1 << 8);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides up", &flags, 1 << 2); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("obscures", &flags, 1 << 6);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Collides up", &flags, 1 << 2); // correct
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("obscures", &flags, 1 << 6);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides down", &flags, 1 << 3); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Contiguous", &flags, 1 << 7); // correct
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Collides down", &flags, 1 << 3); // correct
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Contiguous", &flags, 1 << 7); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Not Placeable", &flags, 1 << 4);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Self Contiguous", &flags, 1 << 9); // correct
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Not Placeable", &flags, 1 << 4);
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Self Contiguous", &flags, 1 << 9); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Additive", &flags, 1 << 5);
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Dirt", &flags, 1 << 11);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Additive", &flags, 1 << 5);
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Dirt", &flags, 1 << 11);
-
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12); // correct
-        ImGui::TableNextColumn();
-        ImGui::CheckboxFlags("UV Light", &flags, 1 << 13); // correct
-
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12); // correct
+        ImGui::TableNextColumn(); ImGui::CheckboxFlags("UV Light", &flags, 1 << 13); // correct
+ // clang-format on
         if(flags != uv.flags) {
             uv.flags = flags;
             updateRender();
@@ -1433,18 +1411,15 @@ static void DrawPreviewWindow() {
                 int flags = tile.flags;
 
                 if(tile_layer == 2) ImGui::BeginDisabled();
+  // clang-format off
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
 
                 ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
-                ImGui::TableNextColumn();
-                ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::CheckboxFlags("rotate_90", &flags, 4);
-                ImGui::TableNextColumn();
-                ImGui::CheckboxFlags("rotate_180", &flags, 8);
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
+                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
+  // clang-format on
 
                 if(tile_layer == 2) ImGui::EndDisabled();
 
@@ -1563,18 +1538,15 @@ static void DrawPreviewWindow() {
 
         if(ImGui::BeginTable("tile_flags_table", 2)) {
             int flags = placing.flags;
+     // clang-format off
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Vertical mirror", &flags, 2);
 
             ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
-            ImGui::TableNextColumn();
-            ImGui::CheckboxFlags("Vertical mirror", &flags, 2);
-
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::CheckboxFlags("Rotate 90", &flags, 4);
-            ImGui::TableNextColumn();
-            ImGui::CheckboxFlags("Rotate 180", &flags, 8);
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 90", &flags, 4);
+            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 180", &flags, 8);
+     // clang-format on
 
             placing.flags = flags;
 
