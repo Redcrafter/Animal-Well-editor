@@ -9,6 +9,9 @@
 #include <stb_image.h>
 #include <glm/glm.hpp>
 
+#include <cmrc/cmrc.hpp>
+CMRC_DECLARE(shaders);
+
 #include "windows/errors.hpp"
 
 template <typename T>
@@ -185,33 +188,21 @@ struct Textured_Framebuffer {
 struct ShaderProgram {
     Unique<GLuint> ID = 0;
 
-    ShaderProgram(std::string vertexPath, std::string fragmentPath) {
-        // 1. retrieve the vertex/fragment source code from filePath
-        std::string vertexCode;
-        std::string fragmentCode;
-        std::ifstream vShaderFile;
-        std::ifstream fShaderFile;
-        // ensure ifstream objects can throw exceptions:
-        vShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-        fShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-
-        try {
-            // open files
-            vShaderFile.open(vertexPath);
-            fShaderFile.open(fragmentPath);
-            std::stringstream vShaderStream, fShaderStream;
-            // read file's buffer contents into streams
-            vShaderStream << vShaderFile.rdbuf();
-            fShaderStream << fShaderFile.rdbuf();
-            // close file handlers
-            vShaderFile.close();
-            fShaderFile.close();
-            // convert stream into string
-            vertexCode = vShaderStream.str();
-            fragmentCode = fShaderStream.str();
-        } catch (std::ifstream::failure& e) {
-            ErrorDialog.push("ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ\n");
+    ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
+        auto fs = cmrc::shaders::get_filesystem();
+        if(!fs.exists(vertexPath)) {
+            ErrorDialog.pushf("File not found \"%s\"", vertexPath.c_str());
+            return;
         }
+        if(!fs.exists(fragmentPath)) {
+            ErrorDialog.pushf("File not found \"%s\"", fragmentPath.c_str());
+            return;
+        }
+
+        auto vs = fs.open(vertexPath);
+        auto vertexCode = std::string(vs.begin(), vs.end());
+        auto fs_ = fs.open(fragmentPath);
+        auto fragmentCode = std::string(fs_.begin(), fs_.end());
 
         const char* vShaderCode = vertexCode.c_str();
         const char* fShaderCode = fragmentCode.c_str();

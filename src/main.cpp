@@ -61,7 +61,9 @@ int selectedMap = 0;
 
 std::vector<char> rawData;
 
-constexpr int mapIds[5] = { 300, 193, 52, 222, 157 };
+static const char* mapNames[5] = { "Overworld",  "CE temple", "Space", "Bunny temple", "Time Capsule" };
+constexpr int mapIds[5] = { 300, 157, 193, 52, 222 };
+
 Map maps[5]{};
 std::unordered_map<uint32_t, SpriteData> sprites;
 std::vector<uv_data> uvs;
@@ -923,12 +925,12 @@ class {
         auto pad = ImGui::GetStyle().FramePadding.x;
 
         for(const auto& [id, pos, size] : tiles_) {
-            ImGui::SetItemTooltip("%i", id);
             ImGui::PushID(id);
             if(ImGui::ImageButton((ImTextureID)atlas->id.value, ImVec2(32, 32), toImVec(pos), toImVec(pos + size))) {
                 TileViewer.selected_tile = id;
                 TileViewer.focus();
             }
+            ImGui::SetItemTooltip("%i", id);
             ImGui::PopID();
             ImGui::SameLine();
 
@@ -1249,7 +1251,6 @@ ImGuiID DockSpaceOverViewport() {
         }
 
         if(ImGui::BeginMenu("Display")) {
-            static const char* mapNames[5] = { "Overworld", "Space", "Bunny temple", "Time Capsule", "CE temple" };
             if(ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
                 updateRender();
             }
@@ -1500,9 +1501,9 @@ static void DrawPreviewWindow() {
                 if(show_fg && tile.tile_id != 0) {
                     placing = tile;
                     background = false;
-                } else if(show_bg) {
+                } else {
                     tile = room->tiles[1][tp.y][tp.x];
-                    if(tile.tile_id != 0) {
+                    if(show_bg && tile.tile_id != 0) {
                         placing = tile;
                         background = true;
                     } else {
@@ -1651,11 +1652,11 @@ int runViewer() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram tile_shader("shaders/tile.vs", "shaders/tile.fs");
-    ShaderProgram bg_shader("shaders/bg.vs", "shaders/bg.fs");
-    ShaderProgram light_shader("shaders/light.vs", "shaders/light.fs");
+    ShaderProgram tile_shader ("src/shaders/tile.vs" , "src/shaders/tile.fs");
+    ShaderProgram bg_shader   ("src/shaders/bg.vs"   , "src/shaders/bg.fs");
+    ShaderProgram light_shader("src/shaders/light.vs", "src/shaders/light.fs");
+    ShaderProgram merge_shader("src/shaders/merge.vs", "src/shaders/merge.fs");
 
-    ShaderProgram merge_shader("shaders/merge.vs", "shaders/merge.fs");
     merge_shader.Use();
     merge_shader.setInt("tiles", 0);
     merge_shader.setInt("lights", 1);
