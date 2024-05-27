@@ -86,6 +86,7 @@ bool show_fg = true;
 bool show_bg = true;
 bool show_bg_tex = true;
 bool do_lighting = false;
+bool room_grid = false;
 
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -1260,6 +1261,7 @@ ImGuiID DockSpaceOverViewport() {
             ImGui::Checkbox("Background Texture", &show_bg_tex);
             ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
             ImGui::Checkbox("Apply lighting", &do_lighting);
+            ImGui::Checkbox("Show Room Grid", &room_grid);
 
             ImGui::EndMenu();
         }
@@ -1474,7 +1476,7 @@ static void DrawPreviewWindow() {
                     DrawRect(selectionVerts, pos, glm::vec2(uv.size), {1, 1, 1, 1}, 1);
                 }
             }
-            DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, {1, 1, 1, 0.5}, 1);
+            if(!room_grid) DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, {1, 1, 1, 0.5}, 1);
         }
     } else if(mode == 1) {
         static MapTile placing;
@@ -1548,11 +1550,28 @@ static void DrawPreviewWindow() {
 
         if(room != nullptr) {
             DrawRect(selectionVerts, glm::vec2(mouse_world_pos) * 8.0f, glm::vec2(8), {1, 1, 1, 1}, 1);
-            DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, {1, 1, 1, 0.5}, 1);
+            if(!room_grid) DrawRect(selectionVerts, room_pos * room_size * 8, glm::ivec2(40, 22) * 8, {1, 1, 1, 0.5}, 1);
         }
     }
 
     ImGui::End();
+}
+
+static void draw_room_grid() {
+    if(!room_grid) {
+        return;
+    }
+
+    const auto& map = maps[selectedMap];
+
+    for (size_t i = 0; i <= map.size.x; i++) {
+        auto x = (map.offset.x + i) * 40 * 8;
+        DrawLine(selectionVerts, {x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, {1, 1, 1, 0.75}, 1 / gScale);
+    }
+    for (size_t i = 0; i <= map.size.y; i++) {
+        auto y = (map.offset.y + i) * 22 * 8;
+        DrawLine(selectionVerts, {map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, {1, 1, 1, 0.75}, 1 / gScale);
+    }
 }
 
 // Main code
@@ -1737,6 +1756,8 @@ int runViewer() {
             TileViewer.draw();
             SpriteViewer.draw();
             DrawPreviewWindow();
+
+            draw_room_grid();
 
             // 1. light pass
             if(do_lighting) {
