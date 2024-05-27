@@ -1069,7 +1069,7 @@ static void randomize() {
 
 static void export_exe(bool patch_renderdoc) {
     std::string path;
-    auto result = NFD::SaveDialog({ { "Game", {".exe"} } }, std::filesystem::current_path().string().c_str(), path, window);
+    auto result = NFD::SaveDialog({ { "Game", {"exe"} } }, std::filesystem::current_path().string().c_str(), path, window);
 
     if(result == NFD::Result::Error) {
         ErrorDialog.push(NFD::GetError());
@@ -1219,7 +1219,7 @@ ImGuiID DockSpaceOverViewport() {
             }
             if(ImGui::MenuItem("Export Map")) {
                 std::string path;
-                auto result = NFD::SaveDialog({ { "Map", {".map" }} }, std::filesystem::current_path().string().c_str(), path, window);
+                auto result = NFD::SaveDialog({ { "Map", {"map" }} }, std::filesystem::current_path().string().c_str(), path, window);
 
                 if(result == NFD::Result::Error) {
                     ErrorDialog.push(NFD::GetError());
