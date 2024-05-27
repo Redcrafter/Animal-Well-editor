@@ -87,6 +87,7 @@ bool show_bg = true;
 bool show_bg_tex = true;
 bool do_lighting = false;
 bool room_grid = false;
+bool show_water = false;
 
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -290,7 +291,7 @@ auto renderMap(const Map& map, int layer) {
                     }
                     auto uvp = glm::vec2(uv.pos);
 
-                    vert.emplace_back(pos                          , uvp / atlasSize);           // tl
+                    vert.emplace_back(pos, uvp / atlasSize);           // tl
                     vert.emplace_back(pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize); // tr
                     vert.emplace_back(pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);  // bl
 
@@ -312,13 +313,13 @@ auto renderBgs(const Map& map) {
         auto rp = glm::vec2(room.x * 40 * 8, room.y * 22 * 8);
 
         if(room.bgId != 0) {
-            bg.push_back({rp                , {0, 0, room.bgId - 1}}); // tl
+            bg.push_back({rp, {0, 0, room.bgId - 1}}); // tl
             bg.push_back({{rp.x + 320, rp.y}, {1, 0, room.bgId - 1}}); // tr
             bg.push_back({{rp.x, rp.y + 176}, {0, 1, room.bgId - 1}}); // bl
 
-            bg.push_back({{rp.x + 320, rp.y      }, {1, 0, room.bgId - 1}});       // tr
+            bg.push_back({{rp.x + 320, rp.y}, {1, 0, room.bgId - 1}});       // tr
             bg.push_back({{rp.x + 320, rp.y + 176}, {1, 1, room.bgId - 1}}); // br
-            bg.push_back({{rp.x      , rp.y + 176}, {0, 1, room.bgId - 1}});       // bl
+            bg.push_back({{rp.x, rp.y + 176}, {0, 1, room.bgId - 1}});       // bl
         }
     }
     return bg;
@@ -440,10 +441,22 @@ static void RenderQuad() {
     if(quadVAO == nullptr) {
         const float quadVertices[] = {
             // positions  // texture Coords
-            -1.0f,  1.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f,
-             1.0f,  1.0f, 1.0f, 1.0f,
-             1.0f, -1.0f, 1.0f, 0.0f,
+            -1.0f,
+            1.0f,
+            0.0f,
+            1.0f,
+            -1.0f,
+            -1.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            1.0f,
+            1.0f,
+            1.0f,
+            1.0f,
+            -1.0f,
+            1.0f,
+            0.0f,
         };
 
         quadVAO = std::make_unique<VAO>();
@@ -619,32 +632,46 @@ static void DrawUvFlags(uv_data& uv) {
         uint32_t flags = uv.flags;
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides right", &flags, 1 << 1); // correct
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Blocks Light", &flags, 1 << 8);
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Collides right", &flags, 1 << 1); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Blocks Light", &flags, 1 << 8);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides up", &flags, 1 << 2); // correct
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("obscures", &flags, 1 << 6);
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Collides up", &flags, 1 << 2); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("obscures", &flags, 1 << 6);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides down", &flags, 1 << 3); // correct
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Contiguous", &flags, 1 << 7); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Collides down", &flags, 1 << 3); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Contiguous", &flags, 1 << 7); // correct
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Not Placeable", &flags, 1 << 4);
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Self Contiguous", &flags, 1 << 9); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Not Placeable", &flags, 1 << 4);
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Self Contiguous", &flags, 1 << 9); // correct
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Additive", &flags, 1 << 5);
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Dirt", &flags, 1 << 11);
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Additive", &flags, 1 << 5);
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Dirt", &flags, 1 << 11);
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12); // correct
-        ImGui::TableNextColumn(); ImGui::CheckboxFlags("UV Light", &flags, 1 << 13); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12); // correct
+        ImGui::TableNextColumn();
+        ImGui::CheckboxFlags("UV Light", &flags, 1 << 13); // correct
 
         if(flags != uv.flags) {
             uv.flags = flags;
@@ -1267,6 +1294,7 @@ ImGuiID DockSpaceOverViewport() {
             ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
             ImGui::Checkbox("Apply lighting", &do_lighting);
             ImGui::Checkbox("Show Room Grid", &room_grid);
+            ImGui::Checkbox("Show Water Level", &show_water);
 
             ImGui::EndMenu();
         }
@@ -1396,7 +1424,8 @@ static void DrawPreviewWindow() {
             }
 
             ImGui::SeparatorText("Room Tile Data");
-            ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background" : "N/A");
+            ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background"
+                                                                                                          : "N/A");
             ImGui::Text("id %i", tile.tile_id);
             ImGui::Text("param %i", tile.param);
 
@@ -1406,12 +1435,16 @@ static void DrawPreviewWindow() {
                 if(tile_layer == 2) ImGui::BeginDisabled();
 
                 ImGui::TableNextRow();
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
+                ImGui::TableNextColumn();
+                ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
+                ImGui::TableNextColumn();
+                ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
 
                 ImGui::TableNextRow();
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
+                ImGui::TableNextColumn();
+                ImGui::CheckboxFlags("rotate_90", &flags, 4);
+                ImGui::TableNextColumn();
+                ImGui::CheckboxFlags("rotate_180", &flags, 8);
 
                 if(tile_layer == 2) ImGui::EndDisabled();
 
@@ -1532,12 +1565,16 @@ static void DrawPreviewWindow() {
             int flags = placing.flags;
 
             ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
-            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Vertical mirror", &flags, 2);
+            ImGui::TableNextColumn();
+            ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
+            ImGui::TableNextColumn();
+            ImGui::CheckboxFlags("Vertical mirror", &flags, 2);
 
             ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 90", &flags, 4);
-            ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 180", &flags, 8);
+            ImGui::TableNextColumn();
+            ImGui::CheckboxFlags("Rotate 90", &flags, 4);
+            ImGui::TableNextColumn();
+            ImGui::CheckboxFlags("Rotate 180", &flags, 8);
 
             placing.flags = flags;
 
@@ -1562,6 +1599,25 @@ static void DrawPreviewWindow() {
     ImGui::End();
 }
 
+static void draw_water_level() {
+    if(!show_water) {
+        return;
+    }
+
+    const Map& map = maps[selectedMap];
+
+    for(const Room& room : map.rooms) {
+        if(room.waterLevel >= 176) {
+            continue;
+        }
+
+        auto bottom_left = glm::vec2 {room.x * 40 * 8, (room.y + 1) * 22 * 8};
+        auto size = glm::vec2 {40 * 8, room.waterLevel - 176};
+
+        DrawCube(selectionVerts, bottom_left, size, glm::vec4 {0, 0, 1, 0.3});
+    }
+}
+
 static void draw_room_grid() {
     if(!room_grid) {
         return;
@@ -1569,11 +1625,11 @@ static void draw_room_grid() {
 
     const auto& map = maps[selectedMap];
 
-    for (size_t i = 0; i <= map.size.x; i++) {
+    for(size_t i = 0; i <= map.size.x; i++) {
         auto x = (map.offset.x + i) * 40 * 8;
         DrawLine(selectionVerts, {x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, {1, 1, 1, 0.75}, 1 / gScale);
     }
-    for (size_t i = 0; i <= map.size.y; i++) {
+    for(size_t i = 0; i <= map.size.y; i++) {
         auto y = (map.offset.y + i) * 22 * 8;
         DrawLine(selectionVerts, {map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, {1, 1, 1, 0.75}, 1 / gScale);
     }
@@ -1669,8 +1725,8 @@ int runViewer() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram tile_shader ("src/shaders/tile.vs" , "src/shaders/tile.fs");
-    ShaderProgram bg_shader   ("src/shaders/bg.vs"   , "src/shaders/bg.fs");
+    ShaderProgram tile_shader("src/shaders/tile.vs", "src/shaders/tile.fs");
+    ShaderProgram bg_shader("src/shaders/bg.vs", "src/shaders/bg.fs");
     ShaderProgram light_shader("src/shaders/light.vs", "src/shaders/light.fs");
     ShaderProgram merge_shader("src/shaders/merge.vs", "src/shaders/merge.fs");
 
@@ -1763,6 +1819,7 @@ int runViewer() {
             DrawPreviewWindow();
 
             draw_room_grid();
+            draw_water_level();
 
             // 1. light pass
             if(do_lighting) {
