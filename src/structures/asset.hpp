@@ -25,7 +25,7 @@ struct asset_entry {
     AssetType type;
     uint8_t unknown1[7];
 
-    uint64_t ptr;  // offset by 0x140001200
+    uint64_t ptr; // offset by 0x140001200
     uint32_t length;
 
     uint32_t unknown2;

@@ -13,14 +13,14 @@ struct MapHeader {
 
     uint8_t world_wrap_x_start;
     uint8_t world_wrap_x_end;
-    uint32_t idk3;  // always 8
+    uint32_t idk3; // always 8
 
     uint32_t signature2;
 };
 
 struct MapTile {
     uint16_t tile_id;
-    uint8_t param;  // depends on tile_id
+    uint8_t param; // depends on tile_id
 
     union {
         struct {
@@ -56,7 +56,7 @@ struct Room {
 static_assert(sizeof(Room) == 0x1b88);
 
 class Map {
-   public:
+  public:
     uint8_t world_wrap_x_start;
     uint8_t world_wrap_x_end;
 
@@ -88,7 +88,7 @@ class Map {
         int x_min = 65535, x_max = 0;
         int y_min = 65535, y_max = 0;
 
-        for (int i = 0; i < head.roomCount; i++) {
+        for(int i = 0; i < head.roomCount; i++) {
             auto& room = this->rooms[i];
             x_min = std::min(x_min, (int)room.x);
             x_max = std::max(x_max, (int)room.x);
@@ -106,9 +106,9 @@ class Map {
     }
 
     Room* getRoom(int x, int y) {
-        if (x < 0 || x >= 256 || y < 0 || y >= 256)
+        if(x < 0 || x >= 256 || y < 0 || y >= 256)
             return nullptr;
-        if (coordinate_map.contains(x | (y << 8))) {
+        if(coordinate_map.contains(x | (y << 8))) {
             return &rooms[coordinate_map.at(x | (y << 8))];
         }
         return nullptr;
@@ -118,10 +118,10 @@ class Map {
         auto rx = x / 40;
         auto ry = y / 22;
 
-        if (rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
+        if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
             return std::nullopt;
 
-        if (coordinate_map.contains(rx | (ry << 8))) {
+        if(coordinate_map.contains(rx | (ry << 8))) {
             const auto& room = rooms[coordinate_map.at(rx | (ry << 8))];
             return room.tiles[layer][y % 22][x % 40];
         }
@@ -133,10 +133,10 @@ class Map {
         auto rx = x / 40;
         auto ry = y / 22;
 
-        if (rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
+        if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
             return;
 
-        if (coordinate_map.contains(rx | (ry << 8))) {
+        if(coordinate_map.contains(rx | (ry << 8))) {
             auto& room = rooms[coordinate_map.at(rx | (ry << 8))];
             room.tiles[layer][y % 22][x % 40] = tile;
         }
@@ -152,7 +152,7 @@ class Map {
             world_wrap_x_start,
             world_wrap_x_end,
             8,
-            0xF0F0CAFE
+            0xF0F0CAFE,
         };
         std::memcpy(data.data() + 0x10, rooms.data(), rooms.size() * sizeof(Room));
 

@@ -103,7 +103,7 @@ static Result AddFiltersToDialog(IFileDialog* fileOpenDialog, const std::vector<
 			if(i > 0) {
 				ext += ";";
 			}
-			ext += "*" + filter.Extensions[i];
+			ext += "*." + filter.Extensions[i];
 		}
 
 		CopyNFDCharToWChar(filter.Name.c_str(), &name);

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <random>
+
 #include <immintrin.h>
 
 // see https://www.intel.com/content/dam/doc/white-paper/advanced-encryption-standard-new-instructions-set-paper.pdf
@@ -80,7 +81,7 @@ std::vector<uint8_t> encrypt(std::span<const uint8_t> data, const std::array<uin
     std::uniform_int_distribution<uint32_t> dist;
 
     std::array<uint8_t, 16> iv;
-    for (size_t i = 0; i < 16; i++) {
+    for(size_t i = 0; i < 16; i++) {
         iv[i] = dist(re);
     }
 
@@ -89,7 +90,7 @@ std::vector<uint8_t> encrypt(std::span<const uint8_t> data, const std::array<uin
 
     auto step = [&](__m128i val) {
         val = val ^ _key[0];
-        for (int i = 1; i < 10; i++) {
+        for(int i = 1; i < 10; i++) {
             val = _mm_aesenc_si128(val, _key[i]);
         }
         *out_ptr = _mm_aesenclast_si128(val, _key[10]);
@@ -98,12 +99,12 @@ std::vector<uint8_t> encrypt(std::span<const uint8_t> data, const std::array<uin
 
     step(_key[0] ^ *(out_ptr - 1));
 
-    for (size_t i = 0; i < (length >> 4); i++) {
+    for(size_t i = 0; i < (length >> 4); i++) {
         step(data_[i] ^ *(out_ptr - 1));
     }
-    if ((length & 0xF) != 0) {
-        std::array<uint8_t, 16> buf{0};
-        for (int i = 0; i < (length & 0xF); ++i) {
+    if((length & 0xF) != 0) {
+        std::array<uint8_t, 16> buf {0};
+        for(int i = 0; i < (length & 0xF); ++i) {
             buf[i] = data[(length & (~0xF)) + i];
         }
         step(*(__m128i*)buf.data() ^ *(out_ptr - 1));
@@ -116,13 +117,13 @@ bool decrypt(std::span<const uint8_t> data, const std::array<uint8_t, 16>& key, 
     auto _key = expandKey(key);
 
     __m128i inv_key[9];
-    for (int i = 0; i < 9; ++i) {
+    for(int i = 0; i < 9; ++i) {
         inv_key[i] = _mm_aesimc_si128(_key[i + 1]);
     }
 
     auto step = [&](__m128i val) {
         val = val ^ _key[10];
-        for (int i = 9; i > 0; i--) {
+        for(int i = 9; i > 0; i--) {
             val = _mm_aesdec_si128(val, inv_key[i - 1]);
         }
         return _mm_aesdeclast_si128(val, _key[0]);
@@ -130,14 +131,14 @@ bool decrypt(std::span<const uint8_t> data, const std::array<uint8_t, 16>& key, 
 
     auto data_ = (__m128i*)data.data();
     // first 16 bytes of decrypted data should be key again
-    if (!eq((step(data_[1]) ^ data_[0]), _key[0]))
+    if(!eq((step(data_[1]) ^ data_[0]), _key[0]))
         return false;
 
     out.resize(data.size() - 0x20);
     auto out_ptr = (__m128i*)out.data();
 
     auto len = ((data.size() & 0xf) != 0) + ((data.size() - 0x10) >> 4);
-    for (int i = 1; i < len; i += 1) {
+    for(int i = 1; i < len; i += 1) {
         out_ptr[i - 1] = step(data_[i + 1]) ^ data_[i];
     }
 
