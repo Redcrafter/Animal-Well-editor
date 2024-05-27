@@ -499,7 +499,7 @@ static void LoadAtlas(std::span<const uint8_t> data) {
     int width, height, n;
     auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
     if(dat == nullptr) {
-        throw std::runtime_error("invalid texture atlas format");
+        throw std::runtime_error("failed to load texture atlas");
     }
 
     atlas = std::make_unique<Texture>();
@@ -529,72 +529,77 @@ static void LoadAtlas(std::span<const uint8_t> data) {
 
 static bool load_game(const std::string& path) {
     if(!std::filesystem::exists(path)) {
-        ErrorDialog.push("File not found");
         return false;
     }
     rawData = readFile(path.c_str());
 
-    auto sections = getSegmentOffsets(rawData);
+    try {
+        auto sections = getSegmentOffsets(rawData);
 
-    assert(sections.data.size() >= sizeof(asset_entry) * 676);
-    auto assets = std::span((asset_entry*)sections.data.data(), 676);
+        assert(sections.data.size() >= sizeof(asset_entry) * 676);
+        auto assets = std::span((asset_entry*)sections.data.data(), 676);
 
-    std::vector<uint8_t> decryptBuffer;
+        std::vector<uint8_t> decryptBuffer;
 
-    auto get_asset = [&](int id) {
-        assert(id >= 0 && id < 676);
-        auto& asset = assets[id];
-        assert(sections.rdata.size() >= asset.ptr - sections.rdata_pointer_offset + asset.length);
-        auto dat = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+        auto get_asset = [&](int id) {
+            assert(id >= 0 && id < 676);
+            auto& asset = assets[id];
+            assert(sections.rdata.size() >= asset.ptr - sections.rdata_pointer_offset + asset.length);
+            auto dat = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
 
-        if(tryDecrypt(asset, dat, decryptBuffer)) {
-            return std::span(decryptBuffer);
+            if(tryDecrypt(asset, dat, decryptBuffer)) {
+                return std::span(decryptBuffer);
+            }
+            return dat;
+        };
+
+        LoadAtlas(get_asset(255));
+
+        if(bg_tex == nullptr) {
+            bg_tex = std::make_unique<Texture>();
         }
-        return dat;
-    };
+        glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex->id);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-    LoadAtlas(get_asset(255));
+        bg_tex->LoadSubImage(1 - 1, get_asset(14));
+        bg_tex->LoadSubImage(2 - 1, get_asset(22));
+        bg_tex->LoadSubImage(3 - 1, get_asset(22));
+        bg_tex->LoadSubImage(4 - 1, get_asset(19));
+        bg_tex->LoadSubImage(5 - 1, get_asset(19));
+        bg_tex->LoadSubImage(6 - 1, get_asset(15));
+        bg_tex->LoadSubImage(7 - 1, get_asset(13));
+        bg_tex->LoadSubImage(8 - 1, get_asset(13));
+        bg_tex->LoadSubImage(9 - 1, get_asset(16));
+        bg_tex->LoadSubImage(10 - 1, get_asset(17));
+        bg_tex->LoadSubImage(11 - 1, get_asset(16));
+        bg_tex->LoadSubImage(12 - 1, get_asset(26));
+        bg_tex->LoadSubImage(13 - 1, get_asset(11));
+        bg_tex->LoadSubImage(14 - 1, get_asset(12));
+        bg_tex->LoadSubImage(15 - 1, get_asset(20));
+        bg_tex->LoadSubImage(16 - 1, get_asset(18));
+        bg_tex->LoadSubImage(17 - 1, get_asset(23));
+        bg_tex->LoadSubImage(18 - 1, get_asset(24));
+        bg_tex->LoadSubImage(19 - 1, get_asset(21));
 
-    bg_tex = std::make_unique<Texture>();
-    glBindTexture(GL_TEXTURE_2D_ARRAY, bg_tex->id);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, 320, 180, 19, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        for(size_t i = 0; i < 5; i++) {
+            maps[i] = Map(get_asset(mapIds[i]));
+        }
 
-    bg_tex->LoadSubImage(1 - 1, get_asset(14));
-    bg_tex->LoadSubImage(2 - 1, get_asset(22));
-    bg_tex->LoadSubImage(3 - 1, get_asset(22));
-    bg_tex->LoadSubImage(4 - 1, get_asset(19));
-    bg_tex->LoadSubImage(5 - 1, get_asset(19));
-    bg_tex->LoadSubImage(6 - 1, get_asset(15));
-    bg_tex->LoadSubImage(7 - 1, get_asset(13));
-    bg_tex->LoadSubImage(8 - 1, get_asset(13));
-    bg_tex->LoadSubImage(9 - 1, get_asset(16));
-    bg_tex->LoadSubImage(10 - 1, get_asset(17));
-    bg_tex->LoadSubImage(11 - 1, get_asset(16));
-    bg_tex->LoadSubImage(12 - 1, get_asset(26));
-    bg_tex->LoadSubImage(13 - 1, get_asset(11));
-    bg_tex->LoadSubImage(14 - 1, get_asset(12));
-    bg_tex->LoadSubImage(15 - 1, get_asset(20));
-    bg_tex->LoadSubImage(16 - 1, get_asset(18));
-    bg_tex->LoadSubImage(17 - 1, get_asset(23));
-    bg_tex->LoadSubImage(18 - 1, get_asset(24));
-    bg_tex->LoadSubImage(19 - 1, get_asset(21));
+        for(auto el : spriteMapping) {
+            sprites[el.tile_id] = parse_sprite(get_asset(el.asset_id));
+        }
 
-    for(size_t i = 0; i < 5; i++) {
-        maps[i] = Map(get_asset(mapIds[i]));
+        uvs = parse_uvs(get_asset(254));
+
+        updateRender();
+        return true;
+    } catch(std::exception& e) {
+        ErrorDialog.push(e.what());
     }
 
-    for(auto el : spriteMapping) {
-        sprites[el.tile_id] = parse_sprite(get_asset(el.asset_id));
-    }
-
-    uvs = parse_uvs(get_asset(254));
-
-    updateRender();
-
-    ImGui::CloseCurrentPopup();
-    return true;
+    return false;
 }
 
 static void load_game_dialog() {
@@ -1229,7 +1234,7 @@ ImGuiID DockSpaceOverViewport() {
             if(ImGui::MenuItem("Export Map")) {
                 static std::string lastPath = std::filesystem::current_path().string();
                 std::string path;
-                auto result = NFD::SaveDialog({{"Map", {"map"}}}, std::filesystem::current_path().string().c_str(), path, window);
+                auto result = NFD::SaveDialog({{"Map", {"map"}}}, lastPath.c_str(), path, window);
 
                 if(result == NFD::Result::Error) {
                     ErrorDialog.push(NFD::GetError());

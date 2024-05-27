@@ -130,7 +130,7 @@ struct Texture {
         int n;
         auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
         if(dat == nullptr) {
-            throw std::runtime_error("missing texture");
+            throw std::runtime_error("failed to load texture");
         }
 
         glBindTexture(GL_TEXTURE_2D, id);

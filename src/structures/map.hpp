@@ -154,7 +154,7 @@ class Map {
             8,
             0xF0F0CAFE,
         };
-        std::memcpy(data.data() + 0x10, rooms.data(), rooms.size() * sizeof(Room));
+        std::memcpy(data.data() + sizeof(MapHeader), rooms.data(), rooms.size() * sizeof(Room));
 
         return data;
     }

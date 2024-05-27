@@ -23,6 +23,7 @@ class {
                 for(auto& e : errors) {
                     ImGui::Indent();
                     ImGui::Text(e.c_str());
+                    ImGui::Unindent();
                 }
             }
 

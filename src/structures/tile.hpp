@@ -33,21 +33,27 @@ struct uv_data {
 };
 static_assert(sizeof(uv_data) == 10);
 
-std::vector<uv_data> parse_uvs(std::span<const uint8_t> data) {
-    assert(data.size() >= 0xC);
+inline std::vector<uv_data> parse_uvs(std::span<const uint8_t> data) {
+    if(data.size() < 0xC) {
+        throw std::runtime_error("invalid uv header size");
+    }
 
     auto magic = *(uint32_t *)data.data();
-    assert(magic == 0x00B00B00);
+    if(magic != 0x00B00B00) {
+        throw std::runtime_error("invalid uv header");
+    }
     auto count = *(uint32_t *)(data.data() + 4);
     auto unused = *(uint32_t *)(data.data() + 8);  // null in the given asset
 
-    assert(data.size() >= 0xC + count * sizeof(uv_data));
+    if(data.size() < 0xC + count * sizeof(uv_data)) {
+        throw std::runtime_error("invalid uv data size");
+    }
 
     auto ptr = (uv_data *)(data.data() + 0xC);
     return std::vector(ptr, ptr + count);
 }
 
-std::vector<uint8_t> save_uvs(std::span<const uv_data> uvs) {
+inline std::vector<uint8_t> save_uvs(std::span<const uv_data> uvs) {
     std::vector<uint8_t> data(0xC + uvs.size() * sizeof(uv_data));
 
     *((uint32_t*)data.data() + 0) = 0x00B00B00;

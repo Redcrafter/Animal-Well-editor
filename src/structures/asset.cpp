@@ -4,7 +4,6 @@
 #include <fstream>
 
 #include "../aes.hpp"
-#include "../dos_parser.hpp"
 
 static std::array<uint8_t, 16> keys[3] = {
     {'G', 'o', 'o', 'd', 'L', 'U', 'c', 'K', 'M', 'y', 'F', 'r', 'i', 'E', 'n', 'd'},

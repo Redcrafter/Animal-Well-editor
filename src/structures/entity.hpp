@@ -217,13 +217,16 @@ constexpr TileMapping spriteMapping[] = {
     {0x9d, 0xaf, 0x33e},
 };
 
-SpriteData parse_sprite(std::span<const uint8_t> data) {
-    // assert(asset.info.type == AssetType::SpriteData);
-    assert(data.size() >= 0x30);
+inline SpriteData parse_sprite(std::span<const uint8_t> data) {
+    if(data.size() < 0x30) {
+        throw std::runtime_error("invalid sprite header size");
+    }
     auto ptr = (char*)data.data();
 
     auto magic = *(uint32_t*)ptr;
-    assert(magic == 0x0003AC1D);
+    if(magic != 0x0003AC1D) {
+        throw std::runtime_error("invalid sprite header");
+    }
 
     SpriteData out;
     out.composite_size.x = *(uint16_t*)(ptr + 4);
@@ -233,20 +236,27 @@ SpriteData parse_sprite(std::span<const uint8_t> data) {
     out.subsprite_count = *(uint8_t*)(ptr + 12);
     out.animation_count = *(uint8_t*)(ptr + 13);
 
-    assert(data.size() >= 0x30 + out.animation_count * sizeof(SpriteAnimation) + out.layer_count * out.composition_count + out.subsprite_count * sizeof(SubSprite) + out.layer_count * sizeof(SpriteLayer));
+    auto anim_size = out.animation_count * sizeof(SpriteAnimation);
+    auto comp_size = out.layer_count * out.composition_count;
+    auto subs_size = out.subsprite_count * sizeof(SubSprite);
+    auto layer_size = out.layer_count * sizeof(SpriteLayer);
+
+    if(data.size() < 0x30 + anim_size + comp_size + subs_size + layer_size) {
+        throw std::runtime_error("invalid sprite data size");
+    }
 
     ptr += 0x30;
 
     out.animations = {(SpriteAnimation*)ptr, ((SpriteAnimation*)ptr) + out.animation_count};
-    ptr += out.animation_count * sizeof(SpriteAnimation);
+    ptr += anim_size;
 
-    out.compositions = {ptr, ptr + out.layer_count * out.composition_count};
-    ptr += out.layer_count * out.composition_count;
+    out.compositions = {ptr, ptr + comp_size};
+    ptr += comp_size;
 
     out.sub_sprites = {(SubSprite*)ptr, ((SubSprite*)ptr) + out.subsprite_count};
-    ptr += out.subsprite_count * sizeof(SubSprite);
+    ptr += subs_size;
 
-    out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr + out.layer_count * sizeof(SpriteLayer))};
+    out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr) + out.layer_count};
 
     return out;
 }
