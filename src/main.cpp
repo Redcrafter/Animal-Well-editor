@@ -596,7 +596,7 @@ static bool load_game(const std::string& path) {
 
 static void load_game_dialog() {
     std::string path;
-    auto result = NFD::OpenDialog({ { "Game", { ".exe" } } }, "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well", path, window);
+    auto result = NFD::OpenDialog({ { "Game", { "exe" } } }, "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well", path, window);
     if(result == NFD::Result::Error) {
         ErrorDialog.push(NFD::GetError());
     } else if(result == NFD::Result::Okay) {
@@ -1197,7 +1197,7 @@ ImGuiID DockSpaceOverViewport() {
 
             if(ImGui::MenuItem("Load Map")) {
                 std::string path;
-                auto result = NFD::OpenDialog({ {"Map", {".map"}} }, std::filesystem::current_path().string().c_str(), path, window);
+                auto result = NFD::OpenDialog({ {"Map", {"map"}} }, std::filesystem::current_path().string().c_str(), path, window);
 
                 if(result == NFD::Result::Error) {
                     ErrorDialog.push(NFD::GetError());
