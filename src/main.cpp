@@ -608,7 +608,7 @@ static bool load_game(const std::string& path) {
 
 static void load_game_dialog() {
     std::string path;
-    auto result = NFD::OpenDialog({ { "Game", { ".exe" } } }, "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well", path, window);
+    auto result = NFD::OpenDialog({ { "Game", { "exe" } } }, "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well", path, window);
     if(result == NFD::Result::Error) {
         ErrorDialog.push(NFD::GetError());
     } else if(result == NFD::Result::Okay) {
@@ -1081,7 +1081,7 @@ static void randomize() {
 
 static void export_exe(bool patch_renderdoc) {
     std::string path;
-    auto result = NFD::SaveDialog({ { "Game", {".exe"} } }, std::filesystem::current_path().string().c_str(), path, window);
+    auto result = NFD::SaveDialog({ { "Game", {"exe"} } }, std::filesystem::current_path().string().c_str(), path, window);
 
     if(result == NFD::Result::Error) {
         ErrorDialog.push(NFD::GetError());
@@ -1209,7 +1209,7 @@ ImGuiID DockSpaceOverViewport() {
 
             if(ImGui::MenuItem("Load Map")) {
                 std::string path;
-                auto result = NFD::OpenDialog({ {"Map", {".map"}} }, std::filesystem::current_path().string().c_str(), path, window);
+                auto result = NFD::OpenDialog({ {"Map", {"map"}} }, std::filesystem::current_path().string().c_str(), path, window);
 
                 if(result == NFD::Result::Error) {
                     ErrorDialog.push(NFD::GetError());
@@ -1231,7 +1231,7 @@ ImGuiID DockSpaceOverViewport() {
             }
             if(ImGui::MenuItem("Export Map")) {
                 std::string path;
-                auto result = NFD::SaveDialog({ { "Map", {".map" }} }, std::filesystem::current_path().string().c_str(), path, window);
+                auto result = NFD::SaveDialog({ { "Map", {"map" }} }, std::filesystem::current_path().string().c_str(), path, window);
 
                 if(result == NFD::Result::Error) {
                     ErrorDialog.push(NFD::GetError());
