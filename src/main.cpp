@@ -313,7 +313,7 @@ auto renderBgs(const Map& map) {
         auto rp = glm::vec2(room.x * 40 * 8, room.y * 22 * 8);
 
         if(room.bgId != 0) {
-     // clang-format off
+            // clang-format off
             bg.push_back({rp                , {0, 0, room.bgId - 1}}); // tl
             bg.push_back({{rp.x + 320, rp.y}, {1, 0, room.bgId - 1}}); // tr
             bg.push_back({{rp.x, rp.y + 176}, {0, 1, room.bgId - 1}}); // bl
@@ -321,7 +321,7 @@ auto renderBgs(const Map& map) {
             bg.push_back({{rp.x + 320, rp.y      }, {1, 0, room.bgId - 1}}); // tr
             bg.push_back({{rp.x + 320, rp.y + 176}, {1, 1, room.bgId - 1}}); // br
             bg.push_back({{rp.x      , rp.y + 176}, {0, 1, room.bgId - 1}}); // bl
-     // clang-format on
+            // clang-format on
         }
     }
     return bg;
@@ -441,7 +441,7 @@ static void RenderQuad() {
     static std::unique_ptr<VBO> quadVBO;
 
     if(quadVAO == nullptr) {
- // clang-format off
+        // clang-format off
         const float quadVertices[] = {
             // positions  // texture Coords
             -1.0f,  1.0f, 0.0f, 1.0f,
@@ -449,7 +449,7 @@ static void RenderQuad() {
              1.0f,  1.0f, 1.0f, 1.0f,
              1.0f, -1.0f, 1.0f, 0.0f,
         };
- // clang-format on
+        // clang-format on
 
         quadVAO = std::make_unique<VAO>();
         quadVAO->Bind();
@@ -622,7 +622,8 @@ static void load_game_dialog() {
 static void DrawUvFlags(uv_data& uv) {
     if(ImGui::BeginTable("uv_flags_table", 2)) {
         uint32_t flags = uv.flags;
- // clang-format off
+
+        // clang-format off
         ImGui::TableNextRow();
         ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
         ImGui::TableNextColumn(); ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
@@ -650,7 +651,8 @@ static void DrawUvFlags(uv_data& uv) {
         ImGui::TableNextRow();
         ImGui::TableNextColumn(); ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12); // correct
         ImGui::TableNextColumn(); ImGui::CheckboxFlags("UV Light", &flags, 1 << 13); // correct
- // clang-format on
+        // clang-format on
+
         if(flags != uv.flags) {
             uv.flags = flags;
             updateRender();
@@ -1225,11 +1227,11 @@ ImGuiID DockSpaceOverViewport() {
                         auto data = readFile(path.c_str());
                         auto map = Map(std::span((uint8_t*)data.data(), data.size()));
 
-                        if(map.coordinate_map == maps[selectedMap].coordinate_map) {
-                            maps[selectedMap] = map;
-                            updateRender();
-                        } else {
-                            ErrorDialog.push("Map structure differs from currently loaded map.\nTry loading from a different slot.");
+                        maps[selectedMap] = map;
+                        updateRender();
+
+                        if(map.coordinate_map != maps[selectedMap].coordinate_map) {
+                            ErrorDialog.push("Warning map structure differs from previously loaded map.\nMight break things so be careful.");
                         }
                     } catch(std::exception& e) {
                         ErrorDialog.push(e.what());
@@ -1411,7 +1413,7 @@ static void DrawPreviewWindow() {
                 int flags = tile.flags;
 
                 if(tile_layer == 2) ImGui::BeginDisabled();
-  // clang-format off
+                // clang-format off
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
@@ -1419,7 +1421,7 @@ static void DrawPreviewWindow() {
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
-  // clang-format on
+                // clang-format on
 
                 if(tile_layer == 2) ImGui::EndDisabled();
 
@@ -1538,7 +1540,7 @@ static void DrawPreviewWindow() {
 
         if(ImGui::BeginTable("tile_flags_table", 2)) {
             int flags = placing.flags;
-     // clang-format off
+            // clang-format off
             ImGui::TableNextRow();
             ImGui::TableNextColumn(); ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
             ImGui::TableNextColumn(); ImGui::CheckboxFlags("Vertical mirror", &flags, 2);
@@ -1546,7 +1548,7 @@ static void DrawPreviewWindow() {
             ImGui::TableNextRow();
             ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 90", &flags, 4);
             ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 180", &flags, 8);
-     // clang-format on
+            // clang-format on
 
             placing.flags = flags;
 
@@ -1758,7 +1760,6 @@ int runViewer() {
     if(!load_game("C:/Program Files (x86)/Steam/steamapps/common/Animal Well/Animal Well.exe")) {
         load_game("./Animal Well.exe");
     }
-    ErrorDialog.clear();
 
     // Main loop
     while(!glfwWindowShouldClose(window)) {

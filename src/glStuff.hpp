@@ -106,7 +106,7 @@ struct Texture {
         glBindTexture(GL_TEXTURE_2D, id);
     }
 
-    void Load(const std::vector<uint8_t>& data) {
+    void Load(std::span<const uint8_t> data) {
         int n;
         auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
         if(dat == nullptr) {
