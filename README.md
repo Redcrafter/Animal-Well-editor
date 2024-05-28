@@ -8,7 +8,7 @@ Map editor for the Game Animal Well
 ### Windows
 
 ```sh
-git clone --recursive https://github.com/Redcrafter/multiEmu.git
+git clone --recursive https://github.com/Redcrafter/Animal-Well-editor.git
 
 mkdir build
 cd build
@@ -18,7 +18,7 @@ cmake ../
 ### Linux
 ```sh
 sudo apt install libgtk2.0-dev
-git clone --recursive https://github.com/Redcrafter/multiEmu.git
+git clone --recursive https://github.com/Redcrafter/Animal-Well-editor.git
 
 mkdir build
 cd build
