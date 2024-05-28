@@ -1227,12 +1227,12 @@ ImGuiID DockSpaceOverViewport() {
                         auto data = readFile(path.c_str());
                         auto map = Map(std::span((uint8_t*)data.data(), data.size()));
 
-                        maps[selectedMap] = map;
-                        updateRender();
-
                         if(map.coordinate_map != maps[selectedMap].coordinate_map) {
                             ErrorDialog.push("Warning map structure differs from previously loaded map.\nMight break things so be careful.");
                         }
+
+                        maps[selectedMap] = map;
+                        updateRender();
                     } catch(std::exception& e) {
                         ErrorDialog.push(e.what());
                     }
