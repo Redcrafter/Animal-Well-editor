@@ -8,6 +8,8 @@
 void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<uint32_t, SpriteData>& sprites, Mesh& mesh, int layer) {
     auto atlasSize = glm::vec2(1024, 2048);
 
+    mesh.clear();
+
     for(auto&& room : map.rooms) {
         for(int y2 = 0; y2 < 22; y2++) {
             for(int x2 = 0; x2 < 40; x2++) {
@@ -160,6 +162,8 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
 void renderBgs(const Map& map, Mesh& mesh) {
     const auto texSize = glm::vec2(320 * 4, 180 * 4);
 
+    mesh.clear();
+
     static glm::vec2 roomUvs[] = {
         {0, 0},
         glm::vec2(320 * 3, 180 * 0) / texSize,
@@ -183,8 +187,6 @@ void renderBgs(const Map& map, Mesh& mesh) {
         glm::vec2(320 * 2, 180 * 2) / texSize
     };
 
-    mesh.clear();
-
     for(auto&& room : map.rooms) {
         auto rp = glm::vec2(room.x * 40 * 8, room.y * 22 * 8);
 
@@ -199,6 +201,8 @@ void renderBgs(const Map& map, Mesh& mesh) {
 
 void renderLights(const Map& map, std::span<const uv_data> uvs, Mesh & mesh) {
     std::vector<glm::ivec2> lights; // not really needed. i'll remove it later
+
+    mesh.clear();
 
     for(auto&& room : map.rooms) {
         for(int y2 = 0; y2 < 22; y2++) {
