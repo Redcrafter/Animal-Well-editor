@@ -1,9 +1,9 @@
 #version 330 core
 
-in vec3 UV;
+in vec2 UV;
 out vec4 result;
 
-uniform sampler2DArray myTextureSampler;
+uniform sampler2D myTextureSampler;
 uniform vec4 color;
 
 void main() {

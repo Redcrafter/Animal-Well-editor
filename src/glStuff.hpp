@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <span>
-#include <sstream>
 #include <string>
 
 #include <glad/gl.h>
@@ -126,15 +125,15 @@ struct Texture {
         stbi_image_free(dat);
     }
 
-    void LoadSubImage(int layer, std::span<const uint8_t> data) {
-        int n;
+    void LoadSubImage(int x, int y, std::span<const uint8_t> data) {
+        int width, height, n;
         auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
         if(dat == nullptr) {
             throw std::runtime_error("failed to load texture");
         }
 
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, dat);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, dat);
 
         stbi_image_free(dat);
     }
@@ -274,5 +273,69 @@ struct ShaderProgram {
     }
     void setVec4(const char* name, const glm::vec4& vec) {
         glUniform4f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z, vec.w);
+    }
+};
+
+
+struct Vertex {
+    glm::vec2 position;
+    glm::vec2 uv;
+    uint32_t color;
+};
+
+struct Mesh {
+    VAO vao;
+    VBO vbo {GL_ARRAY_BUFFER, GL_STATIC_DRAW};
+
+    std::vector<Vertex> data;
+
+    Mesh() {
+        vao.Bind();
+        vbo.Bind();
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT        , GL_FALSE, sizeof(Vertex), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT        , GL_FALSE, sizeof(Vertex), (void*)(2 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex), (void*)(4 * sizeof(float)));
+    }
+
+    void AddLine(glm::vec2 p1, glm::vec2 p2, uint32_t col = IM_COL32_WHITE, float thickness = 1) {
+        auto d = glm::normalize(p2 - p1) * (thickness * 0.5f);
+
+        data.emplace_back(glm::vec2(p1.x + d.y, p1.y - d.x), glm::vec2(), col); // tl
+        data.emplace_back(glm::vec2(p2.x + d.y, p2.y - d.x), glm::vec2(), col); // tr
+        data.emplace_back(glm::vec2(p1.x - d.y, p1.y + d.x), glm::vec2(), col); // bl
+
+        data.emplace_back(glm::vec2(p2.x - d.y, p2.y + d.x), glm::vec2(), col); // br
+        data.emplace_back(glm::vec2(p1.x - d.y, p1.y + d.x), glm::vec2(), col); // bl
+        data.emplace_back(glm::vec2(p2.x + d.y, p2.y - d.x), glm::vec2(), col); // tr
+    }
+    void AddRect(glm::vec2 p_min, glm::vec2 p_max, uint32_t col = IM_COL32_WHITE, float thickness = 1) {
+        AddLine(p_min, glm::vec2(p_max.x, p_min.y), col, thickness);
+        AddLine(glm::vec2(p_max.x, p_min.y), p_max, col, thickness);
+        AddLine(p_max, glm::vec2(p_min.x, p_max.y), col, thickness);
+        AddLine(glm::vec2(p_min.x, p_max.y), p_min, col, thickness);
+    }
+    void AddRectFilled(glm::vec2 p_min, glm::vec2 p_max, glm::vec2 uv_min, glm::vec2 uv_max, uint32_t col = IM_COL32_WHITE) {
+        data.emplace_back(p_min, uv_min, col); // tl
+        data.emplace_back(glm::vec2(p_max.x, p_min.y), glm::vec2(uv_max.x, uv_min.y), col); // tr
+        data.emplace_back(glm::vec2(p_min.x, p_max.y), glm::vec2(uv_min.x, uv_max.y), col); // bl
+
+        data.emplace_back(glm::vec2(p_max.x, p_min.y), glm::vec2(uv_max.x, uv_min.y), col); // tr
+        data.emplace_back(p_max, uv_max, col); // br
+        data.emplace_back(glm::vec2(p_min.x, p_max.y), glm::vec2(uv_min.x, uv_max.y), col); // bl
+    }
+
+    void Buffer() {
+        vbo.BufferData(data.data(), data.size() * sizeof(Vertex));
+    }
+    void Draw() {
+        vao.Bind();
+        glDrawArrays(GL_TRIANGLES, 0, data.size());
+    }
+    void clear() {
+        data.clear();
     }
 };
