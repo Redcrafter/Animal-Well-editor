@@ -1396,8 +1396,8 @@ int runViewer() {
     bg_text = std::make_unique<Mesh>();
     lights = std::make_unique<Mesh>();
     overlay = std::make_unique<Mesh>();
-    Textured_Framebuffer light_fb(1280, 720, GL_RGBA16F);
-    Textured_Framebuffer tile_fb(1280, 720, GL_RGBA16F);
+    Textured_Framebuffer light_fb(1280, 720);
+    Textured_Framebuffer tile_fb(1280, 720);
 
     framebuffers.push_back(&light_fb);
     framebuffers.push_back(&tile_fb);

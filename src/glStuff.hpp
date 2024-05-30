@@ -157,13 +157,12 @@ struct Framebuffer {
 struct Textured_Framebuffer {
     Framebuffer fb;
     Texture tex;
-    GLint internal_format;
 
-    Textured_Framebuffer(int width, int height, GLint internal_format) : internal_format(internal_format) {
+    Textured_Framebuffer(int width, int height) {
         fb.Bind();
         tex.Bind();
 
-        glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -176,7 +175,7 @@ struct Textured_Framebuffer {
             return;
 
         glBindTexture(GL_TEXTURE_2D, tex.id);
-        glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     }
 
     void Bind() {
@@ -298,7 +297,7 @@ struct Mesh {
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 2, GL_FLOAT        , GL_FALSE, sizeof(Vertex), (void*)(2 * sizeof(float)));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex), (void*)(4 * sizeof(float)));
+        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)(4 * sizeof(float)));
     }
 
     void AddLine(glm::vec2 p1, glm::vec2 p2, uint32_t col = IM_COL32_WHITE, float thickness = 1) {
