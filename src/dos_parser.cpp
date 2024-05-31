@@ -260,23 +260,27 @@ SegmentData getSegmentOffsets(std::span<char> data) {
     auto section_ptr = (SectionHeader*)(ptr + dos_header->coffHeaderPointer + sizeof(COFFHeader) + coff_header_ptr->sizeOfOptionalHeader);
     auto image_base = coff_optional_header->imageBase;
 
+    uint32_t data_offset = 0;
     std::span<uint8_t> dat;
     std::span<uint8_t> rdata;
-    uint64_t rdata_offset = -1;
+    uint32_t rdata_offset = -1;
 
     for(size_t i = 0; i < coff_header_ptr->numberOfSections; i++) {
         auto& section = section_ptr[i];
         if(std::strcmp(section.name, ".data") == 0) {
             dat = std::span(ptr + section.ptrRawData, section.sizeOfRawData);
+            data_offset = section.rva;
         } else if(std::strcmp(section.name, ".rdata") == 0) {
             rdata = std::span(ptr + section.ptrRawData, section.sizeOfRawData);
-            rdata_offset = section.rva + image_base;
+            rdata_offset = section.rva;
         }
     }
 
     return {
+        data_offset,
         dat,
         rdata_offset,
         rdata,
+        image_base
     };
 }

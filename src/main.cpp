@@ -230,8 +230,7 @@ static bool load_game(const std::string& path) {
         auto get_asset = [&](int id) {
             assert(id >= 0 && id < 676);
             auto& asset = assets[id];
-            assert(sections.rdata.size() >= asset.ptr - sections.rdata_pointer_offset + asset.length);
-            auto dat = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+            auto dat = sections.get_rdata_ptr(asset.ptr, asset.length);
 
             if(tryDecrypt(asset, dat, decryptBuffer)) {
                 return std::span(decryptBuffer);
@@ -685,7 +684,7 @@ static void dump_assets() {
                     break;
             }
 
-            auto dat = sections.rdata.subspan(item.ptr - sections.rdata_pointer_offset, item.length);
+            auto dat = sections.get_rdata_ptr(item.ptr, item.length);
 
             std::ofstream file("assets/" + std::to_string(i) + ext, std::ios::binary);
             if(tryDecrypt(item, dat, decrypted)) {
@@ -794,7 +793,7 @@ static void export_exe(bool patch_renderdoc) {
 
         auto replaceAsset = [&](const std::vector<uint8_t>& data, int id) {
             auto& asset = assets[id];
-            auto ptr = sections.rdata.subspan(asset.ptr - sections.rdata_pointer_offset, asset.length);
+            auto ptr = sections.get_rdata_ptr(asset.ptr, asset.length);
 
             if(((uint8_t)asset.type & 192) == 64) {
                 int key = 0; // 193, 212, 255, 300
