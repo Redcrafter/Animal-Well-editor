@@ -43,7 +43,7 @@ inline std::vector<uv_data> parse_uvs(std::span<const uint8_t> data) {
         throw std::runtime_error("invalid uv header");
     }
     auto count = *(uint32_t *)(data.data() + 4);
-    auto unused = *(uint32_t *)(data.data() + 8);  // null in the given asset
+    assert(*(uint32_t *)(data.data() + 8) == 0); // null in the given asset
 
     if(data.size() < 0xC + count * sizeof(uv_data)) {
         throw std::runtime_error("invalid uv data size");

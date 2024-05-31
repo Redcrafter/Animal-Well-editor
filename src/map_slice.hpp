@@ -55,7 +55,7 @@ class MapSlice {
         data.reserve(size.x * size.y);
         this->_size = size;
 
-        for(size_t i = 0; i < size.x * size.y; i++) {
+        for(int i = 0; i < size.x * size.y; i++) {
             data.push_back(tile);
         }
     }

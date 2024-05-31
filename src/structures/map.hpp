@@ -79,17 +79,17 @@ class Map {
         if(data.size() < sizeof(MapHeader) + head.roomCount * sizeof(Room)) {
             throw std::runtime_error("Error parsing map: invalid size");
         }
-        Room* rooms = (Room*)(data.data() + sizeof(MapHeader));
+        Room* rooms_ = (Room*)(data.data() + sizeof(MapHeader));
 
         world_wrap_x_start = head.world_wrap_x_start;
         world_wrap_x_end = head.world_wrap_x_end;
-        this->rooms = {rooms, rooms + head.roomCount};
+        rooms = {rooms_, rooms_ + head.roomCount};
 
         int x_min = 65535, x_max = 0;
         int y_min = 65535, y_max = 0;
 
         for(int i = 0; i < head.roomCount; i++) {
-            auto& room = this->rooms[i];
+            auto& room = rooms[i];
             x_min = std::min(x_min, (int)room.x);
             x_max = std::max(x_max, (int)room.x);
             y_min = std::min(y_min, (int)room.y);
@@ -143,8 +143,8 @@ class Map {
     }
 
     auto save() const {
-        auto size = sizeof(MapHeader) + rooms.size() * sizeof(Room);
-        std::vector<uint8_t> data(size);
+        auto bytes = sizeof(MapHeader) + rooms.size() * sizeof(Room);
+        std::vector<uint8_t> data(bytes);
 
         *(MapHeader*)data.data() = {
             0xF00DCAFE,

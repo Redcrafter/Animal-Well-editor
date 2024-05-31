@@ -476,7 +476,7 @@ static void ImGui_draw_sprite(const SpriteData& sprite, int frame, glm::u16vec2 
     const ImVec2 p = ImGui::GetCursorScreenPos();
     auto pos = glm::vec2(p.x, p.y);
 
-    for(int j = 0; j < sprite.layers.size(); ++j) {
+    for(size_t j = 0; j < sprite.layers.size(); ++j) {
         auto subsprite_id = sprite.compositions[frame * sprite.layers.size() + j];
         if(subsprite_id >= sprite.sub_sprites.size())
             continue;
@@ -516,8 +516,8 @@ class {
         auto& uv = uvs[tile_id];
 
         ImGui::Text("Composite size %i %i", sprite.size.x, sprite.size.y);
-        ImGui::Text("Layer count %i", sprite.layers.size());
-        ImGui::Text("Subsprite count %i", sprite.sub_sprites.size());
+        ImGui::Text("Layer count %zu", sprite.layers.size());
+        ImGui::Text("Subsprite count %zu", sprite.sub_sprites.size());
 
         if(!sprite.animations.empty()) {
             ImGui::NewLine();
@@ -666,7 +666,7 @@ class {
             // Otherwise by default the table will fit all available space, like a BeginChild() call.
             ImVec2 outer_size = ImVec2(0.0f, TEXT_BASE_HEIGHT * 8);
 
-            ImGui::Text("%i results", results.size());
+            ImGui::Text("%zu results", results.size());
             if(ImGui::BeginTable("search_results", 3, flags, outer_size)) {
                 ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
                 ImGui::TableSetupColumn("x", ImGuiTableColumnFlags_None);
@@ -725,7 +725,7 @@ class {
         if(tiles_.empty()) {
             auto atlas_size = glm::vec2(atlas->width, atlas->height);
 
-            for(int i = 0; i < uvs.size(); ++i) {
+            for(size_t i = 0; i < uvs.size(); ++i) {
                 auto uv = uvs[i];
                 if(uv.size == glm::u16vec2(0)) {
                     continue;
@@ -776,7 +776,7 @@ static void dump_assets() {
 
         std::vector<uint8_t> decrypted;
 
-        for(int i = 0; i < assets.size(); ++i) {
+        for(size_t i = 0; i < assets.size(); ++i) {
             auto& item = assets[i];
 
             std::string ext = ".bin";
@@ -1143,8 +1143,8 @@ static void HelpMarker(const char* desc) {
     }
 }
 
-glm::ivec2 get_mouse_world(glm::vec2 mousePos) {
-    auto mp = glm::vec4((mousePos / screenSize) * 2.0f - 1.0f, 0, 1);
+glm::ivec2 screen_to_world(glm::vec2 pos) {
+    auto mp = glm::vec4((pos / screenSize) * 2.0f - 1.0f, 0, 1);
     mp.y = -mp.y;
     return glm::ivec2(glm::inverse(MVP) * mp) / 8;
 }
@@ -1169,7 +1169,7 @@ static void handle_input() {
     ImGuiIO& io = ImGui::GetIO();
 
     const auto delta = lastMousePos - mousePos;
-    auto lastWorldPos = get_mouse_world(lastMousePos);
+    auto lastWorldPos = screen_to_world(lastMousePos);
     lastMousePos = mousePos;
 
     if(io.WantCaptureMouse) return;
@@ -1179,13 +1179,13 @@ static void handle_input() {
             view = glm::translate(view, glm::vec3(-delta / gScale, 0));
         }
         if(GetKey(ImGuiKey_MouseRight)) {
-            mode0_selection = get_mouse_world(mousePos);
+            mode0_selection = screen_to_world(mousePos);
         }
         if(GetKey(ImGuiKey_Escape)) {
             mode0_selection = glm::ivec2(-1, -1);
         }
     } else if(mouse_mode == 1) {
-        auto mouse_world_pos = get_mouse_world(mousePos);
+        auto mouse_world_pos = screen_to_world(mousePos);
 
         const auto holding = selection_handler.holding();
         auto selecting = selection_handler.selecting();
@@ -1260,7 +1260,7 @@ static void DrawPreviewWindow() {
             if(io.WantCaptureMouse) {
                 asdasd = glm::ivec2(-1, -1);
             } else {
-                asdasd = get_mouse_world(mousePos);
+                asdasd = screen_to_world(mousePos);
             }
         }
 
@@ -1346,7 +1346,7 @@ static void DrawPreviewWindow() {
     } else if(mouse_mode == 1) {
         static MapTile placing;
 
-        auto mouse_world_pos = get_mouse_world(mousePos);
+        auto mouse_world_pos = screen_to_world(mousePos);
 
         ImGui::SameLine();
         HelpMarker("Middle click to copy a tile.\n\
@@ -1463,7 +1463,7 @@ static void draw_overlay() {
             if(io.WantCaptureMouse) {
                 asdasd = glm::ivec2(-1, -1);
             } else {
-                asdasd = get_mouse_world(mousePos);
+                asdasd = screen_to_world(mousePos);
             }
         }
 
@@ -1488,7 +1488,7 @@ static void draw_overlay() {
                 auto bb_max = pos + glm::vec2(8, 8);
 
                 int composition_id = 0;
-                for(int j = 0; j < sprite.layers.size(); ++j) {
+                for(size_t j = 0; j < sprite.layers.size(); ++j) {
                     auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
                     if(subsprite_id >= sprite.sub_sprites.size())
                         continue;
@@ -1522,7 +1522,7 @@ static void draw_overlay() {
                 overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
         }
     } else if(mouse_mode == 1) {
-        auto mouse_world_pos = get_mouse_world(mousePos);
+        auto mouse_world_pos = screen_to_world(mousePos);
         auto room_pos = mouse_world_pos / room_size;
         auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
 
@@ -1534,7 +1534,7 @@ static void draw_overlay() {
 
             if(selection_handler.holding()) {
                 auto end = start + selection_handler.size();
-                overlay->AddRectDashed(start * 8, end * 8, IM_COL32(255, 0, 0, 255), 1, 4);
+                overlay->AddRectDashed(start * 8, end * 8, IM_COL32_WHITE, 1, 4);
             } else if(selection_handler.selecting()) {
                 auto end = mouse_world_pos;
                 if(end.x < start.x) {
@@ -1543,7 +1543,7 @@ static void draw_overlay() {
                 if(end.y < start.y) {
                     std::swap(start.y, end.y);
                 }
-                overlay->AddRectDashed(start * 8, end * 8 + 8, IM_COL32(255, 0, 0, 255), 1, 4);
+                overlay->AddRectDashed(start * 8, end * 8 + 8, IM_COL32_WHITE, 1, 4);
             }
         }
     }
@@ -1551,11 +1551,11 @@ static void draw_overlay() {
     if(room_grid) {
         const auto& map = maps[selectedMap];
 
-        for(size_t i = 0; i <= map.size.x; i++) {
+        for(int i = 0; i <= map.size.x; i++) {
             auto x = (map.offset.x + i) * 40 * 8;
             overlay->AddLine({x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, IM_COL32(255, 255, 255, 191), 1 / gScale);
         }
-        for(size_t i = 0; i <= map.size.y; i++) {
+        for(int i = 0; i <= map.size.y; i++) {
             auto y = (map.offset.y + i) * 22 * 8;
             overlay->AddLine({map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, IM_COL32(255, 255, 255, 191), 1 / gScale);
         }

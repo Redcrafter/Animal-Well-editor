@@ -126,14 +126,14 @@ struct Texture {
     }
 
     void LoadSubImage(int x, int y, std::span<const uint8_t> data) {
-        int width, height, n;
-        auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
+        int w, h, n;
+        auto* dat = stbi_load_from_memory(data.data(), data.size(), &w, &h, &n, 4);
         if(dat == nullptr) {
             throw std::runtime_error("failed to load texture");
         }
 
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, dat);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, dat);
 
         stbi_image_free(dat);
     }
@@ -280,6 +280,9 @@ struct Vertex {
     glm::vec2 position;
     glm::vec2 uv;
     uint32_t color;
+
+    Vertex(glm::vec2 position, glm::vec2 uv, uint32_t color) : position(position), uv(uv), color(color) {}
+    Vertex(glm::vec2 position, glm::vec2 uv) : position(position), uv(uv), color(IM_COL32_WHITE) {}
 };
 
 struct Mesh {
@@ -320,7 +323,7 @@ struct Mesh {
 
         for(int i = 0; i < steps; ++i) {
             auto n = p1 + delta;
-            AddLine(p1, n);
+            AddLine(p1, n, col, thickness);
             p1 = n + delta;
         }
         // todo: draw last fractional segment

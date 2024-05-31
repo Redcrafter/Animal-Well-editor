@@ -21,7 +21,7 @@ class {
                 ImGui::Text("Errors:");
                 for(auto& e : errors) {
                     ImGui::Indent();
-                    ImGui::Text(e.c_str());
+                    ImGui::Text("%s", e.c_str());
                     ImGui::Unindent();
                 }
             }
