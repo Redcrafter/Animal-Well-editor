@@ -18,7 +18,7 @@
 #include <imgui_internal.h>
 
 #include "structures/asset.hpp"
-#include "structures/entity.hpp"
+#include "structures/sprite.hpp"
 #include "structures/map.hpp"
 #include "structures/tile.hpp"
 #include "rendering.hpp"
@@ -344,11 +344,36 @@ static void DrawUvFlags(uv_data& uv) {
     }
 }
 
+static void ImGui_draw_sprite(const SpriteData& sprite, int frame, glm::u16vec2 uv) {
+    auto atlasSize = glm::vec2(atlas->width, atlas->height);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    auto pos = glm::vec2(p.x, p.y);
+
+    for(int j = 0; j < sprite.layers.size(); ++j) {
+        auto subsprite_id = sprite.compositions[frame * sprite.layers.size() + j];
+        if(subsprite_id >= sprite.sub_sprites.size())
+            continue;
+
+        auto& layer = sprite.layers[j];
+        if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
+
+        auto& subsprite = sprite.sub_sprites[subsprite_id];
+
+        auto aUv = glm::vec2(uv + subsprite.atlas_pos);
+        auto size = glm::vec2(subsprite.size);
+        auto ap = pos + glm::vec2(subsprite.composite_pos) * 8.0f;
+
+        draw_list->AddImage((ImTextureID)atlas->id.value, toImVec(ap), toImVec(ap + glm::vec2(subsprite.size) * 8.0f), toImVec(aUv / atlasSize), toImVec((aUv + size) / atlasSize));
+    }
+}
+
 class {
     int selected_animation = 0;
     bool playing = false;
     int frame_step = 0;
-    int selected_composition = 0;
+    int selected_frame = 0;
     int selected_sprite = 0;
 
   public:
@@ -365,17 +390,15 @@ class {
         auto& sprite = sprites[tile_id];
         auto& uv = uvs[tile_id];
 
-        ImGui::InputScalarN("Composite size", ImGuiDataType_U16, &sprite.composite_size, 2);
-        ImGui::InputScalar("Layer count", ImGuiDataType_U16, &sprite.layer_count);
-        ImGui::InputScalar("Composite count", ImGuiDataType_U16, &sprite.composition_count);
-        ImGui::InputScalar("Subsprite count", ImGuiDataType_U16, &sprite.subsprite_count);
-        ImGui::InputScalar("Animation count", ImGuiDataType_U16, &sprite.animation_count);
+        ImGui::Text("Composite size %i %i", sprite.size.x, sprite.size.y);
+        ImGui::Text("Layer count %i", sprite.layers.size());
+        ImGui::Text("Subsprite count %i", sprite.sub_sprites.size());
 
-        ImGui::NewLine();
-        if(ImGui::SliderInt("animation", &selected_animation, 0, std::max(0, sprite.animation_count - 1)) && playing) {
-            selected_composition = sprite.animations[selected_animation].start;
-        }
-        if(sprite.animation_count != 0) {
+        if(!sprite.animations.empty()) {
+            ImGui::NewLine();
+            if(ImGui::SliderInt("animation", &selected_animation, 0, std::max(0, (int)sprite.animations.size() - 1)) && playing) {
+                selected_frame = sprite.animations[selected_animation].start;
+            }
             auto& anim = sprite.animations[selected_animation];
             ImGui::InputScalar("start", ImGuiDataType_U16, &anim.start);
             ImGui::InputScalar("end", ImGuiDataType_U16, &anim.end);
@@ -384,9 +407,9 @@ class {
             if(playing) {
                 frame_step++;
                 if(frame_step / 5 > anim.frame_delay) {
-                    selected_composition++;
-                    if(selected_composition > anim.end) {
-                        selected_composition = anim.start;
+                    selected_frame++;
+                    if(selected_frame > anim.end) {
+                        selected_frame = anim.start;
                     }
                     frame_step = 0;
                 }
@@ -395,38 +418,18 @@ class {
             } else {
                 if(ImGui::Button("Play")) {
                     playing = true;
-                    selected_composition = anim.start;
+                    selected_frame = anim.start;
                     frame_step = 0;
                 }
             }
         }
-        ImGui::SliderInt("composition", &selected_composition, 0, sprite.composition_count - 1);
 
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        const ImVec2 p = ImGui::GetCursorScreenPos();
-        auto pos = glm::vec2(p.x, p.y);
-
-        // draw_list->AddCallback([](const ImDrawList* parent_list, const ImDrawCmd* cmd) { }, nullptr);
-
-        auto atlasSize = glm::vec2(atlas->width, atlas->height);
-        for(int j = 0; j < sprite.layer_count; ++j) {
-            auto subsprite_id = sprite.compositions[selected_composition * sprite.layer_count + j];
-            if(subsprite_id >= sprite.subsprite_count)
-                continue;
-
-            auto& layer = sprite.layers[j];
-            if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
-
-            auto& subsprite = sprite.sub_sprites[subsprite_id];
-
-            auto aUv = glm::vec2(uv.pos + subsprite.atlas_pos);
-            auto size = glm::vec2(subsprite.size);
-            auto ap = pos + glm::vec2(subsprite.composite_pos) * 8.0f;
-
-            draw_list->AddImage((ImTextureID)atlas->id.value, toImVec(ap), toImVec(ap + glm::vec2(subsprite.size) * 8.0f), toImVec(aUv / atlasSize), toImVec((aUv + size) / atlasSize));
+        if(sprite.composition_count > 1) {
+            ImGui::NewLine();
+            ImGui::SliderInt("frame", &selected_frame, 0, sprite.composition_count - 1);
         }
 
-        // draw_list->AddCallback()
+        ImGui_draw_sprite(sprite, selected_frame, uv.pos);
 
         ImGui::End();
     }
@@ -434,7 +437,7 @@ class {
     void select(int id) {
         selected_sprite = std::clamp(id, 0, 157);
         selected_animation = 0;
-        selected_composition = 0;
+        selected_frame = 0;
         playing = false;
         frame_step = 0;
     }
@@ -855,7 +858,7 @@ static void export_exe(bool patch_renderdoc) {
 // The limitation with this call is that your window won't have a menu bar.
 // Even though we could pass window flags, it would also require the user to be able to call BeginMenuBar() somehow meaning we can't Begin/End in a single function.
 // But you can also use BeginMainMenuBar(). If you really want a menu bar inside the same window as the one hosting the dockspace, you will need to copy this code somewhere and tweak it.
-ImGuiID DockSpaceOverViewport() {
+static ImGuiID DockSpaceOverViewport() {
     auto viewport = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -1139,19 +1142,19 @@ static void DrawPreviewWindow() {
                 auto bb_max = pos + glm::vec2(8, 8);
 
                 int composition_id = 0;
-                for(int j = 0; j < sprite.layer_count; ++j) {
+                for(int j = 0; j < sprite.layers.size(); ++j) {
                     auto subsprite_id = sprite.compositions[composition_id * sprite.layer_count + j];
-                    if(subsprite_id >= sprite.subsprite_count)
+                    if(subsprite_id >= sprite.sub_sprites.size())
                         continue;
 
                     auto& subsprite = sprite.sub_sprites[subsprite_id];
 
                     auto ap = pos + glm::vec2(subsprite.composite_pos);
                     if(tile.vertical_mirror) {
-                        ap.y = pos.y + (sprite.composite_size.y - (subsprite.composite_pos.y + subsprite.size.y));
+                        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
                     }
                     if(tile.horizontal_mirror) {
-                        ap.x = pos.x + (sprite.composite_size.x - (subsprite.composite_pos.x + subsprite.size.x));
+                        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
                     }
 
                     auto end = ap + glm::vec2(subsprite.size);

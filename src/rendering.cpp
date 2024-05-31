@@ -27,9 +27,9 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
 
                     int composition_id = 0;
 
-                    for(int j = 0; j < sprite.layer_count; ++j) {
-                        auto subsprite_id = sprite.compositions[composition_id * sprite.layer_count + j];
-                        if(subsprite_id >= sprite.subsprite_count) continue;
+                    for(int j = 0; j < sprite.layers.size(); ++j) {
+                        auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
+                        if(subsprite_id >= sprite.sub_sprites.size()) continue;
 
                         auto& layer = sprite.layers[j];
                         if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
@@ -41,12 +41,12 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
                         auto ap = pos + glm::vec2(subsprite.composite_pos);
 
                         if(tile.vertical_mirror) {
-                            ap.y = pos.y + (sprite.composite_size.y - (subsprite.composite_pos.y + subsprite.size.y));
+                            ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
                             aUv.y += size.y;
                             size.y = -size.y;
                         }
                         if(tile.horizontal_mirror) {
-                            ap.x = pos.x + (sprite.composite_size.x - (subsprite.composite_pos.x + subsprite.size.x));
+                            ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
                             aUv.x += size.x;
                             size.x = -size.x;
                         }

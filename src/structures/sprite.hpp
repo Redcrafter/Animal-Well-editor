@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <span>
 
 #include <glm/glm.hpp>
@@ -37,11 +38,8 @@ struct SpriteLayer {
 static_assert(sizeof(SpriteLayer) == 3);
 
 struct SpriteData {
-    glm::u16vec2 composite_size;
-    uint16_t layer_count;
+    glm::u16vec2 size;
     uint16_t composition_count;
-    uint8_t subsprite_count;
-    uint8_t animation_count;
 
     std::vector<SpriteAnimation> animations;
     std::vector<uint8_t> compositions; // are frames
@@ -229,17 +227,17 @@ inline SpriteData parse_sprite(std::span<const uint8_t> data) {
     }
 
     SpriteData out;
-    out.composite_size.x = *(uint16_t*)(ptr + 4);
-    out.composite_size.y = *(uint16_t*)(ptr + 6);
-    out.layer_count = *(uint16_t*)(ptr + 8);
+    out.size.x = *(uint16_t*)(ptr + 4);
+    out.size.y = *(uint16_t*)(ptr + 6);
+    auto layer_count = *(uint16_t*)(ptr + 8);
     out.composition_count = *(uint16_t*)(ptr + 10);
-    out.subsprite_count = *(uint8_t*)(ptr + 12);
-    out.animation_count = *(uint8_t*)(ptr + 13);
+    auto subsprite_count = *(uint8_t*)(ptr + 12);
+    auto animation_count = *(uint8_t*)(ptr + 13);
 
-    auto anim_size = out.animation_count * sizeof(SpriteAnimation);
-    auto comp_size = out.layer_count * out.composition_count;
-    auto subs_size = out.subsprite_count * sizeof(SubSprite);
-    auto layer_size = out.layer_count * sizeof(SpriteLayer);
+    auto anim_size = animation_count * sizeof(SpriteAnimation);
+    auto comp_size = layer_count * out.composition_count;
+    auto subs_size = subsprite_count * sizeof(SubSprite);
+    auto layer_size = layer_count * sizeof(SpriteLayer);
 
     if(data.size() < 0x30 + anim_size + comp_size + subs_size + layer_size) {
         throw std::runtime_error("invalid sprite data size");
@@ -247,16 +245,16 @@ inline SpriteData parse_sprite(std::span<const uint8_t> data) {
 
     ptr += 0x30;
 
-    out.animations = {(SpriteAnimation*)ptr, ((SpriteAnimation*)ptr) + out.animation_count};
+    out.animations = {(SpriteAnimation*)ptr, (SpriteAnimation*)(ptr + anim_size)};
     ptr += anim_size;
 
     out.compositions = {ptr, ptr + comp_size};
     ptr += comp_size;
 
-    out.sub_sprites = {(SubSprite*)ptr, ((SubSprite*)ptr) + out.subsprite_count};
+    out.sub_sprites = {(SubSprite*)ptr, (SubSprite*)(ptr + subs_size)};
     ptr += subs_size;
 
-    out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr) + out.layer_count};
+    out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr + layer_size)};
 
     return out;
 }
