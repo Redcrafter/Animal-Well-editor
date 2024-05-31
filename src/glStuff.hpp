@@ -311,6 +311,23 @@ struct Mesh {
         data.emplace_back(glm::vec2(p1.x - d.y, p1.y + d.x), glm::vec2(), col); // bl
         data.emplace_back(glm::vec2(p2.x + d.y, p2.y - d.x), glm::vec2(), col); // tr
     }
+
+    void AddLineDashed(glm::vec2 p1, glm::vec2 p2, uint32_t col = IM_COL32_WHITE, float thickness = 1, float dashLength = 1) {
+        auto delta = p2 - p1;
+        auto length = glm::length(delta);
+        auto steps = (int)(length / dashLength);
+        delta = (delta / length) * dashLength / 2.0f;
+
+        for(int i = 0; i < steps; ++i) {
+            auto n = p1 + delta;
+            AddLine(p1, n);
+            p1 = n + delta;
+        }
+        // todo: draw last fractional segment
+        // not important for now since dashLength and length will always bee
+        // integers so there will never be any overlap
+    }
+
     void AddRect(glm::vec2 p_min, glm::vec2 p_max, uint32_t col = IM_COL32_WHITE, float thickness = 1) {
         AddLine(p_min, glm::vec2(p_max.x, p_min.y), col, thickness);
         AddLine(glm::vec2(p_max.x, p_min.y), p_max, col, thickness);
@@ -325,6 +342,13 @@ struct Mesh {
         data.emplace_back(glm::vec2(p_max.x, p_min.y), glm::vec2(uv_max.x, uv_min.y), col); // tr
         data.emplace_back(p_max, uv_max, col); // br
         data.emplace_back(glm::vec2(p_min.x, p_max.y), glm::vec2(uv_min.x, uv_max.y), col); // bl
+    }
+
+    void AddRectDashed(glm::vec2 p_min, glm::vec2 p_max, uint32_t col = IM_COL32_WHITE, float thickness = 1, float dashLength = 1) {
+        AddLineDashed(p_min, glm::vec2(p_max.x, p_min.y), col, thickness, dashLength);
+        AddLineDashed(glm::vec2(p_max.x, p_min.y), p_max, col, thickness, dashLength);
+        AddLineDashed(p_max, glm::vec2(p_min.x, p_max.y), col, thickness, dashLength);
+        AddLineDashed(glm::vec2(p_min.x, p_max.y), p_min, col, thickness, dashLength);
     }
 
     void Buffer() {

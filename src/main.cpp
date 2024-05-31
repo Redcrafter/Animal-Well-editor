@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <array>
 #include <cstdio>
+#include <deque>
 #include <filesystem>
 #include <random>
 #include <set>
@@ -18,12 +20,14 @@
 #include <imgui_internal.h>
 
 #include "structures/asset.hpp"
-#include "structures/sprite.hpp"
 #include "structures/map.hpp"
+#include "structures/sprite.hpp"
 #include "structures/tile.hpp"
-#include "rendering.hpp"
 
 #include "dos_parser.hpp"
+#include "history.hpp"
+#include "map_slice.hpp"
+#include "rendering.hpp"
 
 #include "windows/errors.hpp"
 
@@ -47,6 +51,7 @@ glm::mat4 projection;
 glm::mat4 MVP;
 
 glm::vec2 mousePos = glm::vec2(-1);
+glm::vec2 lastMousePos = glm::vec2(-1);
 
 glm::vec2 screenSize;
 
@@ -60,7 +65,7 @@ std::vector<char> rawData;
 static const char* mapNames[5] = {"Overworld", "CE temple", "Space", "Bunny temple", "Time Capsule"};
 constexpr int mapIds[5] = {300, 157, 193, 52, 222};
 
-Map maps[5] {};
+std::array<Map, 5> maps {};
 std::unordered_map<uint32_t, SpriteData> sprites;
 std::vector<uv_data> uvs;
 
@@ -78,30 +83,29 @@ bool do_lighting = false;
 bool room_grid = false;
 bool show_water = false;
 
+constexpr auto room_size = glm::ivec2(40, 22);
+constexpr const char* modes[] = {"View", "Edit"};
+int mouse_mode = 0;
+glm::ivec2 mode0_selection = {-1, -1};
+
+// 0 = forground, 1 = background
+bool selectLayer = false;
+
+// stores copied map tiles
+MapSlice clipboard;
+
+// copying the entire map takes ~1MB so 1000 entries is totally fine
+constexpr int max_undo_size = 1000;
+// needs insertion/deletion at both sides due to overflow protection
+std::deque<std::unique_ptr<HistoryItem>> undo_buffer;
+std::vector<std::unique_ptr<HistoryItem>> redo_buffer;
+
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
-    glm::vec2 newPos {xpos, ypos};
-    if(mousePos == newPos)
-        return;
-
-    if(mousePos == glm::vec2(-1)) {
-        mousePos = newPos;
-        return;
-    }
-    auto delta = mousePos - newPos;
-    mousePos = newPos;
-
-    ImGuiIO& io = ImGui::GetIO();
-    if(io.WantCaptureMouse) {
-        return;
-    }
-
-    if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
-        view = glm::translate(view, glm::vec3(-delta / gScale, 0));
-    }
+    mousePos = {xpos, ypos};
 }
 
 static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
@@ -142,6 +146,128 @@ static void updateRender() {
     renderMap(maps[selectedMap], uvs, sprites, *bg_tiles, 1);
     renderBgs(maps[selectedMap], *bg_text);
     renderLights(maps[selectedMap], uvs, *lights);
+}
+
+static void push_undo(std::unique_ptr<HistoryItem> item) {
+    undo_buffer.push_back(std::move(item));
+    if(undo_buffer.size() > max_undo_size)
+        undo_buffer.pop_front();
+    redo_buffer.clear();
+}
+
+class {
+    // stores tiles underneath the current selection data
+    MapSlice selection_buffer;
+    // location where current selection was originally from
+    glm::ivec3 orig_pos {-1, -1, -1};
+    // current selection location
+    glm::ivec2 start_pos = {-1, -1};
+    glm::ivec2 _size = {0, 0};
+
+  public:
+    void drag_begin(glm::ivec2 pos) {
+        release();
+        start_pos = pos;
+    }
+    void drag_end(glm::ivec2 pos) {
+        assert(start_pos != glm::ivec2(-1, -1));
+        _size = glm::abs(pos - start_pos) + 1;
+        start_pos = glm::min(start_pos, pos); // take min so start is always in the top left
+
+        orig_pos = {start_pos, selectLayer};
+
+        selection_buffer.fill({}, _size);
+    }
+    // sets area and copies underlying data
+    void start_from_paste(glm::ivec2 start, glm::ivec2 size) {
+        release();
+        _size = size;
+        start_pos = start; // take min so start is always in the top left
+
+        orig_pos = {start_pos, selectLayer};
+
+        selection_buffer.copy(maps[selectedMap], orig_pos, _size);
+
+        push_undo(std::make_unique<AreaChange>(orig_pos, selection_buffer));
+    }
+    // apply changes without deselecting
+    void apply() {
+        if(start_pos != glm::ivec2(-1) && orig_pos != glm::ivec3(start_pos, selectLayer)) {
+            push_undo(std::make_unique<AreaMove>(glm::ivec3(start_pos, selectLayer), orig_pos, selection_buffer));
+        }
+        orig_pos = glm::ivec3(start_pos, selectLayer);
+    }
+    // apply changes and deselect
+    void release() {
+        apply();
+        orig_pos = {-1, -1, -1};
+        start_pos = {-1, -1};
+        _size = {0, 0};
+    }
+    // move selection to different layer
+    void change_layer(int from, int to) {
+        selection_buffer.swap(maps[selectedMap], glm::ivec3(start_pos, from)); // put original data back
+        selection_buffer.swap(maps[selectedMap], glm::ivec3(start_pos, to));   // store underlying
+        updateRender();
+    }
+
+    void move(glm::ivec2 delta) {
+        if(delta == glm::ivec2(0, 0)) return;
+        selection_buffer.swap(maps[selectedMap], glm::ivec3(start_pos, selectLayer)); // put original data back
+
+        // move to new pos
+        start_pos += delta;
+
+        selection_buffer.swap(maps[selectedMap], glm::ivec3(start_pos, selectLayer)); // store underlying
+
+        updateRender();
+    }
+
+    bool selecting() const {
+        return start_pos != glm::ivec2(-1, -1) && _size == glm::ivec2(0);
+    }
+    bool holding() const {
+        return start_pos != glm::ivec2(-1, -1) && _size != glm::ivec2(0);
+    }
+    bool contains(glm::ivec2 pos) const {
+        return pos.x >= start_pos.x && pos.y >= start_pos.y &&
+               pos.x < (start_pos.x + _size.x) && pos.y < (start_pos.y + _size.y);
+    }
+    glm::ivec3 start() const { return glm::ivec3(start_pos, selectLayer); }
+    glm::ivec2 size() const { return _size; }
+} selection_handler;
+
+static void undo() {
+    if(undo_buffer.empty()) return;
+    auto el = std::move(undo_buffer.back());
+    undo_buffer.pop_back();
+
+    auto area = el->apply(maps[selectedMap]);
+    updateRender();
+
+    // select region that has been undone. only trigger change if actually moved
+    selection_handler.release();
+    selectLayer = area.first.z;
+    selection_handler.drag_begin(area.first);
+    selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
+
+    redo_buffer.push_back(std::move(el));
+}
+static void redo() {
+    if(redo_buffer.empty()) return;
+    auto el = std::move(redo_buffer.back());
+    redo_buffer.pop_back();
+
+    auto area = el->apply(maps[selectedMap]);
+    updateRender();
+
+    // selct region that has been redone. only trigger change if actually moved
+    selection_handler.release();
+    selectLayer = area.first.z;
+    selection_handler.drag_begin(area.first);
+    selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
+
+    undo_buffer.push_back(std::move(el));
 }
 
 // helper function renders a quad over the entire screen with uv fron (0,0) to (1,1)
@@ -1017,40 +1143,125 @@ static void HelpMarker(const char* desc) {
     }
 }
 
+glm::ivec2 get_mouse_world(glm::vec2 mousePos) {
+    auto mp = glm::vec4((mousePos / screenSize) * 2.0f - 1.0f, 0, 1);
+    mp.y = -mp.y;
+    return glm::ivec2(glm::inverse(MVP) * mp) / 8;
+}
+
+// Returns true while the user holds down the key.
+static bool GetKey(ImGuiKey key) {
+    return ImGui::GetKeyData(key)->Down;
+}
+// Returns true during the frame the user starts pressing down the key.
+static bool GetKeyDown(ImGuiKey key) {
+    return ImGui::GetKeyData(key)->DownDuration == 0.0f;
+}
+// Returns true during the frame the user releases the key.
+static bool GetKeyUp(ImGuiKey key) {
+    auto dat = ImGui::GetKeyData(key);
+    return !dat->Down && dat->DownDurationPrev != -1;
+}
+
+static void handle_input() {
+    if(rawData.empty()) return; // no map loaded
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    const auto delta = lastMousePos - mousePos;
+    auto lastWorldPos = get_mouse_world(lastMousePos);
+    lastMousePos = mousePos;
+
+    if(io.WantCaptureMouse) return;
+
+    if(mouse_mode == 0) {
+        if(GetKey(ImGuiKey_MouseLeft)) {
+            view = glm::translate(view, glm::vec3(-delta / gScale, 0));
+        }
+        if(GetKey(ImGuiKey_MouseRight)) {
+            mode0_selection = get_mouse_world(mousePos);
+        }
+        if(GetKey(ImGuiKey_Escape)) {
+            mode0_selection = glm::ivec2(-1, -1);
+        }
+    } else if(mouse_mode == 1) {
+        auto mouse_world_pos = get_mouse_world(mousePos);
+
+        const auto holding = selection_handler.holding();
+        auto selecting = selection_handler.selecting();
+
+        if(!selecting && GetKey(ImGuiKey_MouseLeft) && GetKey(ImGuiMod_Shift)) { // select start
+            selection_handler.drag_begin(mouse_world_pos);
+            selecting = true;
+        }
+        if(selecting && !GetKey(ImGuiKey_MouseLeft)) { // select end
+            selection_handler.drag_end(mouse_world_pos);
+        }
+
+        if(holding && GetKey(ImGuiKey_Escape)) {
+            selection_handler.release();
+        }
+        if(holding && GetKey(ImGuiMod_Ctrl)) {
+            if(GetKeyDown(ImGuiKey_C)) clipboard.copy(maps[selectedMap], selection_handler.start(), selection_handler.size());
+            if(GetKeyDown(ImGuiKey_X)) {
+                selection_handler.apply();
+                clipboard.cut(maps[selectedMap], selection_handler.start(), selection_handler.size());
+                push_undo(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
+                updateRender();
+            }
+        }
+
+        if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_V)) {
+            // put old data in copy buffer
+            selection_handler.start_from_paste(mouse_world_pos, clipboard.size());
+
+            // put copied tiles down
+            clipboard.paste(maps[selectedMap], {mouse_world_pos, selectLayer});
+            // selection_handler will push undo data once position is finalized
+            updateRender();
+        }
+
+        if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_Z)) {
+            undo();
+        }
+        if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_Y)) {
+            redo();
+        }
+
+        if(holding && selection_handler.contains(lastWorldPos)) {
+            // holding & inside rect
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+
+            if(GetKey(ImGuiKey_MouseLeft)) {
+                selection_handler.move(mouse_world_pos - lastWorldPos);
+            }
+        } else if(!selecting && GetKey(ImGuiKey_MouseLeft)) {
+            view = glm::translate(view, glm::vec3(-delta / gScale, 0));
+        }
+    }
+}
+
 static void DrawPreviewWindow() {
     ImGui::Begin("Properties");
     auto& io = ImGui::GetIO();
     // ImGui::Text("fps %f", ImGui::GetIO().Framerate);
 
-    static const char* modes[] = {"Select", "Place"};
-    static int mode = 0;
-    ImGui::Combo("Mode", &mode, modes, sizeof(modes) / sizeof(char*));
+    if(ImGui::Combo("Mode", &mouse_mode, modes, sizeof(modes) / sizeof(char*))) {
+        mode0_selection = glm::ivec2(-1, -1);
+        selection_handler.release();
+    }
 
-    auto mp = glm::vec4(((mousePos - screenSize / 2.0f) / screenSize) * 2.0f, 0, 1);
-    mp.y = -mp.y;
-    auto mouse_world_pos = glm::ivec2(glm::inverse(MVP) * mp) / 8;
-    const auto room_size = glm::ivec2(40, 22);
-
-    if(mode == 0) {
+    if(mouse_mode == 0) {
         ImGui::SameLine();
         HelpMarker("Right click to select a tile.\nEsc to unselect.");
-        static glm::ivec2 selectedPos = glm::vec2(-1, -1);
-        if(!io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
-            selectedPos = mouse_world_pos;
-        }
-        if(!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_ESCAPE)) {
-            selectedPos = glm::ivec2(-1, -1);
-        }
 
-        glm::ivec2 asdasd;
-        if(selectedPos == glm::ivec2(-1, -1)) {
+        auto asdasd = mode0_selection;
+        if(asdasd == glm::ivec2(-1)) {
             if(io.WantCaptureMouse) {
                 asdasd = glm::ivec2(-1, -1);
             } else {
-                asdasd = mouse_world_pos;
+                asdasd = get_mouse_world(mousePos);
             }
-        } else {
-            asdasd = selectedPos;
         }
 
         auto room_pos = asdasd / room_size;
@@ -1072,15 +1283,12 @@ static void DrawPreviewWindow() {
             ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
             ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
 
-            auto tp = glm::ivec2(glm::mod(glm::vec2(asdasd), glm::vec2(room_size)));
+            auto tp = glm::ivec2(asdasd.x % 40, asdasd.y % 22);
             auto tile = room->tiles[0][tp.y][tp.x];
             int tile_layer = 0;
-
-            if(show_fg && tile.tile_id != 0) {
-                tile_layer = 0;
-            } else {
-                tile = room->tiles[1][tp.y][tp.x];
+            if(!show_fg || tile.tile_id == 0) {
                 tile_layer = 1;
+                tile = room->tiles[1][tp.y][tp.x];
                 if(!show_bg || tile.tile_id == 0) {
                     tile = {};
                     tile_layer = 2;
@@ -1117,17 +1325,12 @@ static void DrawPreviewWindow() {
                 ImGui::EndTable();
             }
 
-            auto& uv = uvs[tile.tile_id];
-
             ImGui::SeparatorText("Tile Data");
             if(tile_layer == 2) ImGui::BeginDisabled();
-            DrawUvFlags(uv);
+            DrawUvFlags(uvs[tile.tile_id]);
             if(tile_layer == 2) ImGui::EndDisabled();
 
-            auto pos = glm::vec2(asdasd) * 8.0f;
-
             if(sprites.contains(tile.tile_id)) {
-                auto sprite = sprites[tile.tile_id];
                 // todo: lazy implementation could be improved with map
                 auto spriteId = std::ranges::find(spriteMapping, tile.tile_id, [](const TileMapping t) { return t.tile_id; })->internal_id;
 
@@ -1137,56 +1340,31 @@ static void DrawPreviewWindow() {
                     SpriteViewer.select_from_tile(tile.tile_id);
                     SpriteViewer.focus();
                 }
-
-                auto bb_max = pos + glm::vec2(8, 8);
-
-                int composition_id = 0;
-                for(int j = 0; j < sprite.layers.size(); ++j) {
-                    auto subsprite_id = sprite.compositions[composition_id * sprite.layer_count + j];
-                    if(subsprite_id >= sprite.sub_sprites.size())
-                        continue;
-
-                    auto& subsprite = sprite.sub_sprites[subsprite_id];
-
-                    auto ap = pos + glm::vec2(subsprite.composite_pos);
-                    if(tile.vertical_mirror) {
-                        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
-                    }
-                    if(tile.horizontal_mirror) {
-                        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
-                    }
-
-                    auto end = ap + glm::vec2(subsprite.size);
-                    bb_max.x = std::max(bb_max.x, end.x);
-                    bb_max.y = std::max(bb_max.y, end.y);
-
-                    auto& layer = sprite.layers[j];
-                    if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
-
-                    overlay->AddRect(ap, end, IM_COL32_WHITE, 0.5f);
-                    // ImGui::Image((ImTextureID)atlas->id.value, toImVec(size), )
-                }
-
-                overlay->AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
-            } else {
-                if(tile.tile_id == 0) {
-                    overlay->AddRect(pos, pos + glm::vec2(8), IM_COL32_WHITE, 1);
-                } else {
-                    overlay->AddRect(pos, pos + glm::vec2(uv.size), IM_COL32_WHITE, 1);
-                }
             }
-            if(!room_grid) overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
         }
-    } else if(mode == 1) {
+
+    } else if(mouse_mode == 1) {
         static MapTile placing;
-        static bool background;
+
+        auto mouse_world_pos = get_mouse_world(mousePos);
 
         ImGui::SameLine();
-        HelpMarker("Middle click to copy a tile.\nRight click to place a tile.");
+        HelpMarker("Middle click to copy a tile.\n\
+Right click to place a tile.\n\
+Shift + Left click to select an area.\n\
+Move selected area with Left click.\n\
+Esc to deselect.\n\
+ctrl + c to copy the selected area.\n\
+ctrl + x to cut selected area.\n\
+ctrl + v to paste at mouse position.\n\
+ctrl + z to undo.\n\
+ctrl + y to redo.");
+
         ImGui::Text("world pos %i %i", mouse_world_pos.x, mouse_world_pos.y);
 
         auto room_pos = mouse_world_pos / room_size;
         auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+
         if(!io.WantCaptureMouse && room != nullptr) {
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE)) {
                 auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
@@ -1194,22 +1372,25 @@ static void DrawPreviewWindow() {
 
                 if(show_fg && tile.tile_id != 0) {
                     placing = tile;
-                    background = false;
+                    selectLayer = false;
                 } else {
                     tile = room->tiles[1][tp.y][tp.x];
                     if(show_bg && tile.tile_id != 0) {
                         placing = tile;
-                        background = true;
+                        selectLayer = true;
                     } else {
                         placing = {};
                     }
                 }
             }
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
+                selection_handler.release();
+
                 auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
-                auto tile_layer = room->tiles[background ? 1 : 0];
+                auto tile_layer = room->tiles[selectLayer];
                 auto tile = tile_layer[tp.y][tp.x];
                 if(tile != placing) {
+                    push_undo(std::make_unique<SingleChange>(glm::ivec3(mouse_world_pos, selectLayer), tile));
                     tile_layer[tp.y][tp.x] = placing;
                     updateRender();
                 }
@@ -1217,7 +1398,9 @@ static void DrawPreviewWindow() {
         }
 
         ImGui::NewLine();
-        ImGui::Checkbox("background layer", &background);
+        if(ImGui::Checkbox("background layer", &selectLayer) && selection_handler.holding()) {
+            selection_handler.change_layer(!selectLayer, selectLayer);
+        }
         ImGui::NewLine();
         ImGui::InputScalar("id", ImGuiDataType_U16, &placing.tile_id);
         ImGui::InputScalar("param", ImGuiDataType_U8, &placing.param);
@@ -1247,11 +1430,6 @@ static void DrawPreviewWindow() {
 
         ImGui::Text("preview");
         ImGui::Image((ImTextureID)atlas->id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
-
-        if(room != nullptr) {
-            overlay->AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
-            if(!room_grid) overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
-        }
     }
 
     ImGui::End();
@@ -1276,20 +1454,111 @@ static void draw_water_level() {
     }
 }
 
-static void draw_room_grid() {
-    if(!room_grid) {
-        return;
+static void draw_overlay() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    if(mouse_mode == 0) {
+        glm::ivec2 asdasd = mode0_selection;
+        if(asdasd == glm::ivec2(-1, -1)) {
+            if(io.WantCaptureMouse) {
+                asdasd = glm::ivec2(-1, -1);
+            } else {
+                asdasd = get_mouse_world(mousePos);
+            }
+        }
+
+        auto room_pos = asdasd / room_size;
+        auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+
+        if(room != nullptr) {
+            auto tp = glm::ivec2(asdasd.x % 40, asdasd.y % 22);
+            auto tile = room->tiles[0][tp.y][tp.x];
+
+            if(!show_fg || tile.tile_id == 0) {
+                tile = room->tiles[1][tp.y][tp.x];
+                if(!show_bg || tile.tile_id == 0) {
+                    tile = {};
+                }
+            }
+
+            auto pos = glm::vec2(asdasd) * 8.0f;
+
+            if(sprites.contains(tile.tile_id)) {
+                auto sprite = sprites[tile.tile_id];
+                auto bb_max = pos + glm::vec2(8, 8);
+
+                int composition_id = 0;
+                for(int j = 0; j < sprite.layers.size(); ++j) {
+                    auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
+                    if(subsprite_id >= sprite.sub_sprites.size())
+                        continue;
+
+                    const auto subsprite = sprite.sub_sprites[subsprite_id];
+                    const auto layer = sprite.layers[j];
+
+                    auto ap = pos + glm::vec2(subsprite.composite_pos);
+                    if(tile.vertical_mirror) {
+                        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
+                    }
+                    if(tile.horizontal_mirror) {
+                        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
+                    }
+
+                    auto end = ap + glm::vec2(subsprite.size);
+                    bb_max = glm::max(bb_max, end);
+
+                    if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
+
+                    overlay->AddRect(ap, end, IM_COL32_WHITE, 0.5f);
+                }
+
+                overlay->AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
+            } else if(tile.tile_id != 0) {
+                overlay->AddRect(pos, pos + glm::vec2(uvs[tile.tile_id].size), IM_COL32_WHITE, 1);
+            } else {
+                overlay->AddRect(pos, pos + glm::vec2(8), IM_COL32_WHITE, 1);
+            }
+            if(!room_grid)
+                overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+        }
+    } else if(mouse_mode == 1) {
+        auto mouse_world_pos = get_mouse_world(mousePos);
+        auto room_pos = mouse_world_pos / room_size;
+        auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+
+        if(room != nullptr) {
+            if(!room_grid) overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+            overlay->AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
+
+            auto start = glm::ivec2(selection_handler.start());
+
+            if(selection_handler.holding()) {
+                auto end = start + selection_handler.size();
+                overlay->AddRectDashed(start * 8, end * 8, IM_COL32(255, 0, 0, 255), 1, 4);
+            } else if(selection_handler.selecting()) {
+                auto end = mouse_world_pos;
+                if(end.x < start.x) {
+                    std::swap(start.x, end.x);
+                }
+                if(end.y < start.y) {
+                    std::swap(start.y, end.y);
+                }
+                overlay->AddRectDashed(start * 8, end * 8 + 8, IM_COL32(255, 0, 0, 255), 1, 4);
+            }
+        }
     }
 
-    const auto& map = maps[selectedMap];
+    if(room_grid) {
+        const auto& map = maps[selectedMap];
 
-    for(size_t i = 0; i <= map.size.x; i++) {
-        auto x = (map.offset.x + i) * 40 * 8;
-        overlay->AddLine({x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, IM_COL32(255, 255, 255, 191), 1 / gScale);
-    }
-    for(size_t i = 0; i <= map.size.y; i++) {
-        auto y = (map.offset.y + i) * 22 * 8;
-        overlay->AddLine({map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, IM_COL32(255, 255, 255, 191), 1 / gScale);
+        for(size_t i = 0; i <= map.size.x; i++) {
+            auto x = (map.offset.x + i) * 40 * 8;
+            overlay->AddLine({x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, IM_COL32(255, 255, 255, 191), 1 / gScale);
+        }
+        for(size_t i = 0; i <= map.size.y; i++) {
+            auto y = (map.offset.y + i) * 22 * 8;
+            overlay->AddLine({map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, IM_COL32(255, 255, 255, 191), 1 / gScale);
+        }
     }
 }
 
@@ -1443,6 +1712,7 @@ int runViewer() {
 
         MVP = projection * view;
 
+        handle_input();
         DockSpaceOverViewport();
         ErrorDialog.draw();
         // ImGui::ShowDemoWindow();
@@ -1455,7 +1725,7 @@ int runViewer() {
             SpriteViewer.draw();
             DrawPreviewWindow();
 
-            draw_room_grid();
+            draw_overlay();
             draw_water_level();
 
             // 1. light pass
