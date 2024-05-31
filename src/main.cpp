@@ -1293,6 +1293,34 @@ static void draw_room_grid() {
     }
 }
 
+static bool UpdateUIScaling() {
+    float xscale, yscale;
+    glfwGetWindowContentScale(window, &xscale, &yscale);
+    assert(xscale == yscale);
+
+    static float oldScale = 1.0;
+    if(xscale == oldScale) return true;
+    oldScale = xscale;
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Setup Dear ImGui style
+    ImGuiStyle& style = ImGui::GetStyle();
+    style = ImGuiStyle();
+    style.ScaleAllSizes(xscale);
+
+    io.Fonts->Clear();
+
+    ImFontConfig config {};
+    config.OversampleH = config.OversampleV = 1;
+    config.PixelSnapH = true;
+    config.SizePixels = 13 * xscale;
+    ImFont* font = io.Fonts->AddFontDefault(&config);
+    assert(font != nullptr);
+
+    return ImGui_ImplOpenGL3_CreateFontsTexture();
+}
+
 // Main code
 int runViewer() {
 #pragma region glfw/opengl setup
@@ -1361,22 +1389,6 @@ int runViewer() {
 #endif
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    // Load Fonts
-    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-    // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
-    // - Read 'docs/FONTS.md' for more instructions and details.
-    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    // - Our Emscripten build process allows embedding fonts to be accessible at runtime from the "fonts/" folder. See Makefile.emscripten for details.
-    // io.Fonts->AddFontDefault();
-    // io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-    // ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
-    // IM_ASSERT(font != nullptr);
 #pragma endregion
 
 #pragma region opgenl buffer setup
@@ -1398,6 +1410,7 @@ int runViewer() {
     bg_text = std::make_unique<Mesh>();
     lights = std::make_unique<Mesh>();
     overlay = std::make_unique<Mesh>();
+
     Textured_Framebuffer light_fb(1280, 720);
     Textured_Framebuffer tile_fb(1280, 720);
 
@@ -1418,6 +1431,8 @@ int runViewer() {
         // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
         glfwPollEvents();
+
+        UpdateUIScaling();
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -1551,7 +1566,7 @@ int main(int, char**) {
 #ifdef _WIN32
 #include <Windows.h>
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    // SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     return main(__argc, __argv);
 }
 #endif
