@@ -104,7 +104,7 @@ std::vector<uint8_t> encrypt(std::span<const uint8_t> data, const std::array<uin
     }
     if((length & 0xF) != 0) {
         std::array<uint8_t, 16> buf {0};
-        for(int i = 0; i < (length & 0xF); ++i) {
+        for(size_t i = 0; i < (length & 0xF); ++i) {
             buf[i] = data[(length & (~0xF)) + i];
         }
         step(*(__m128i*)buf.data() ^ *(out_ptr - 1));
@@ -138,7 +138,7 @@ bool decrypt(std::span<const uint8_t> data, const std::array<uint8_t, 16>& key, 
     auto out_ptr = (__m128i*)out.data();
 
     auto len = ((data.size() & 0xf) != 0) + ((data.size() - 0x10) >> 4);
-    for(int i = 1; i < len; i += 1) {
+    for(size_t i = 1; i < len; i += 1) {
         out_ptr[i - 1] = step(data_[i + 1]) ^ data_[i];
     }
 

@@ -9,7 +9,7 @@
 #include <stb_image.h>
 
 #include <cmrc/cmrc.hpp>
-CMRC_DECLARE(shaders);
+CMRC_DECLARE(resources);
 
 #include "windows/errors.hpp"
 
@@ -187,7 +187,7 @@ struct ShaderProgram {
     Unique<GLuint> ID = 0;
 
     ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
-        auto fs = cmrc::shaders::get_filesystem();
+        auto fs = cmrc::resources::get_filesystem();
         if(!fs.exists(vertexPath)) {
             ErrorDialog.pushf("File not found \"%s\"", vertexPath.c_str());
             return;

@@ -52,7 +52,7 @@ add_executable(editor ${Common_sources} ${imgui_sources}
     "./lib/nativefiledialog/nfd.cpp")
 
 file(GLOB shaders RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/shaders/**")
-cmrc_add_resource_library(shader_resource ALIAS cmrc_shaders NAMESPACE shaders ${shaders})
+cmrc_add_resource_library(shader_resource ALIAS cmrc_shaders NAMESPACE resources ${shaders} "lib/proggyfonts/ProggyVector/ProggyVector-Regular.ttf")
 
 target_include_directories(editor PRIVATE "lib/imgui" "lib/stb" "lib/glm" "lib/glad/include" "lib/nativefiledialog" glfw ${INCLUDES})
 target_link_libraries(editor PRIVATE glfw ${LIBS} cmrc_shaders)

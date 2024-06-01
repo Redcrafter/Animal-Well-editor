@@ -239,6 +239,8 @@ class {
 
 static void undo() {
     if(undo_buffer.empty()) return;
+    selection_handler.release();
+
     auto el = std::move(undo_buffer.back());
     undo_buffer.pop_back();
 
@@ -246,7 +248,6 @@ static void undo() {
     updateRender();
 
     // select region that has been undone. only trigger change if actually moved
-    selection_handler.release();
     selectLayer = area.first.z;
     selection_handler.drag_begin(area.first);
     selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
@@ -255,6 +256,8 @@ static void undo() {
 }
 static void redo() {
     if(redo_buffer.empty()) return;
+    selection_handler.release();
+
     auto el = std::move(redo_buffer.back());
     redo_buffer.pop_back();
 
@@ -262,7 +265,6 @@ static void redo() {
     updateRender();
 
     // selct region that has been redone. only trigger change if actually moved
-    selection_handler.release();
     selectLayer = area.first.z;
     selection_handler.drag_begin(area.first);
     selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
@@ -405,6 +407,8 @@ static bool load_game(const std::string& path) {
 
         uvs = parse_uvs(get_asset(254));
 
+        undo_buffer.clear();
+        redo_buffer.clear();
         updateRender();
         return true;
     } catch(std::exception& e) {
@@ -1043,6 +1047,9 @@ static ImGuiID DockSpaceOverViewport() {
                         }
 
                         maps[selectedMap] = map;
+
+                        undo_buffer.clear();
+                        redo_buffer.clear();
                         updateRender();
                     } catch(std::exception& e) {
                         ErrorDialog.push(e.what());
@@ -1074,6 +1081,8 @@ static ImGuiID DockSpaceOverViewport() {
 
         if(ImGui::BeginMenu("Display")) {
             if(ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
+                undo_buffer.clear();
+                redo_buffer.clear();
                 updateRender();
             }
 
@@ -1580,12 +1589,16 @@ static bool UpdateUIScaling() {
 
     io.Fonts->Clear();
 
-    ImFontConfig config {};
-    config.OversampleH = config.OversampleV = 1;
-    config.PixelSnapH = true;
-    config.SizePixels = 13 * xscale;
-    ImFont* font = io.Fonts->AddFontDefault(&config);
-    assert(font != nullptr);
+    if(xscale == 1.0f) {
+        io.Fonts->AddFontDefault();
+    } else {
+        auto fs = cmrc::resources::get_filesystem();
+        auto dat = fs.open("lib/proggyfonts/ProggyVector/ProggyVector-Regular.ttf");
+
+        ImFontConfig config {};
+        config.FontDataOwnedByAtlas = false;
+        io.Fonts->AddFontFromMemoryTTF((void*)dat.begin(), dat.size(), std::floor(14.0f * xscale), &config);
+    }
 
     return ImGui_ImplOpenGL3_CreateFontsTexture();
 }
