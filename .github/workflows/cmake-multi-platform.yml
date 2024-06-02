@@ -75,6 +75,12 @@ jobs:
       # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
 
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: "editor-${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}"
+        path: "${{ steps.strings.outputs.build-output-dir }}/editor*"
+
     #- name: Test
     #  working-directory: ${{ steps.strings.outputs.build-output-dir }}
     #  # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
