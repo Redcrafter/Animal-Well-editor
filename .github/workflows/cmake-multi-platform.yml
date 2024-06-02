@@ -1,6 +1,6 @@
-# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
-# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
-name: CMake on multiple platforms
+# This is based on a starter workflow for a CMake project running on multiple platforms.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-multi-platform.yml
+name: Build
 
 on:
   push:
@@ -52,7 +52,7 @@ jobs:
 
     - name: Install deps
       if: ${{ matrix.os == 'ubuntu-latest' }}
-      run: sudo apt install -y libgtk-3-dev mesa-utils
+      run: sudo apt install -y libgtk2.0-dev mesa-utils freeglut3-dev libwayland-dev libxkbcommon-dev
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
