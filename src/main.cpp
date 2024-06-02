@@ -1190,6 +1190,22 @@ static void handle_input() {
         if(GetKey(ImGuiKey_MouseRight)) {
             mode0_selection = screen_to_world(mousePos);
         }
+
+        if (mode0_selection != glm::ivec2(-1,-1)) {
+            if(ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+                mode0_selection += glm::ivec2(0,-1);
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+                mode0_selection += glm::ivec2(0,1);
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                mode0_selection += glm::ivec2(-1,0);
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                mode0_selection += glm::ivec2(1,0);
+            }
+        }
+
         if(GetKey(ImGuiKey_Escape)) {
             mode0_selection = glm::ivec2(-1, -1);
         }
@@ -1207,16 +1223,30 @@ static void handle_input() {
             selection_handler.drag_end(mouse_world_pos);
         }
 
-        if(holding && GetKey(ImGuiKey_Escape)) {
-            selection_handler.release();
-        }
-        if(holding && GetKey(ImGuiMod_Ctrl)) {
-            if(GetKeyDown(ImGuiKey_C)) clipboard.copy(maps[selectedMap], selection_handler.start(), selection_handler.size());
-            if(GetKeyDown(ImGuiKey_X)) {
-                selection_handler.apply();
-                clipboard.cut(maps[selectedMap], selection_handler.start(), selection_handler.size());
-                push_undo(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
-                updateRender();
+        if(holding) {
+            if(GetKey(ImGuiKey_Escape)) {
+                selection_handler.release();
+            }
+            if(GetKey(ImGuiMod_Ctrl)) {
+                if(GetKeyDown(ImGuiKey_C)) clipboard.copy(maps[selectedMap], selection_handler.start(), selection_handler.size());
+                if(GetKeyDown(ImGuiKey_X)) {
+                    selection_handler.apply();
+                    clipboard.cut(maps[selectedMap], selection_handler.start(), selection_handler.size());
+                    push_undo(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
+                    updateRender();
+                }
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+                selection_handler.move(glm::ivec2(0,-1));
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+                selection_handler.move(glm::ivec2(0,1));
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                selection_handler.move(glm::ivec2(-1,0));
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                selection_handler.move(glm::ivec2(1,0));
             }
         }
 
@@ -1264,19 +1294,19 @@ static void DrawPreviewWindow() {
         ImGui::SameLine();
         HelpMarker("Right click to select a tile.\nEsc to unselect.");
 
-        auto asdasd = mode0_selection;
-        if(asdasd == glm::ivec2(-1)) {
+        auto tile_location = mode0_selection;
+        if(tile_location == glm::ivec2(-1)) {
             if(io.WantCaptureMouse) {
-                asdasd = glm::ivec2(-1, -1);
+                tile_location = glm::ivec2(-1, -1);
             } else {
-                asdasd = screen_to_world(mousePos);
+                tile_location = screen_to_world(mousePos);
             }
         }
 
-        auto room_pos = asdasd / room_size;
+        auto room_pos = tile_location / room_size;
         auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
 
-        ImGui::Text("world pos %i %i", asdasd.x, asdasd.y);
+        ImGui::Text("world pos %i %i", tile_location.x, tile_location.y);
 
         if(room != nullptr) {
             ImGui::SeparatorText("Room Data");
@@ -1292,7 +1322,7 @@ static void DrawPreviewWindow() {
             ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
             ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
 
-            auto tp = glm::ivec2(asdasd.x % 40, asdasd.y % 22);
+            auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
             auto tile = room->tiles[0][tp.y][tp.x];
             int tile_layer = 0;
             if(!show_fg || tile.tile_id == 0) {
@@ -1467,20 +1497,20 @@ static void draw_overlay() {
     ImGuiIO& io = ImGui::GetIO();
 
     if(mouse_mode == 0) {
-        glm::ivec2 asdasd = mode0_selection;
-        if(asdasd == glm::ivec2(-1, -1)) {
+        glm::ivec2 tile_location = mode0_selection;
+        if(tile_location == glm::ivec2(-1, -1)) {
             if(io.WantCaptureMouse) {
-                asdasd = glm::ivec2(-1, -1);
+                tile_location = glm::ivec2(-1, -1);
             } else {
-                asdasd = screen_to_world(mousePos);
+                tile_location = screen_to_world(mousePos);
             }
         }
 
-        auto room_pos = asdasd / room_size;
+        auto room_pos = tile_location / room_size;
         auto room = maps[selectedMap].getRoom(room_pos.x, room_pos.y);
 
         if(room != nullptr) {
-            auto tp = glm::ivec2(asdasd.x % 40, asdasd.y % 22);
+            auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
             auto tile = room->tiles[0][tp.y][tp.x];
 
             if(!show_fg || tile.tile_id == 0) {
@@ -1490,7 +1520,7 @@ static void draw_overlay() {
                 }
             }
 
-            auto pos = glm::vec2(asdasd) * 8.0f;
+            auto pos = glm::vec2(tile_location) * 8.0f;
 
             if(sprites.contains(tile.tile_id)) {
                 auto sprite = sprites[tile.tile_id];
