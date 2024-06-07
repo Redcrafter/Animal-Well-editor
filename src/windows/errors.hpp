@@ -37,6 +37,17 @@ class {
     void push(const std::string& error) {
         errors.push_back(error);
     }
+    void pushf(const char* fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+
+        char buffer[256];
+
+        vsnprintf(buffer, sizeof(buffer), fmt, args);
+        errors.push_back(buffer);
+
+        va_end(args);
+    }
     void clear() {
         errors.clear();
     }

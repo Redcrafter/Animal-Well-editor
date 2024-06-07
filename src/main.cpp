@@ -915,7 +915,8 @@ class {
     void draw_options() {
         if(has_exported) {
             const auto fileName = std::filesystem::path(export_path).filename().string();
-            if(ImGui::MenuItem(std::format("Export to {}", fileName).c_str(), "Ctrl+S")) {
+            auto name = "Export to " + fileName;
+            if(ImGui::MenuItem(name.c_str(), "Ctrl+S")) {
                 export_exe();
             }
         } else {
@@ -1001,7 +1002,7 @@ class {
 
                     if(enc.size() > asset.length) {
                         error = true;
-                        ErrorDialog.push(std::format("Failed to save asset {} because it was too big", id));
+                        ErrorDialog.pushf("Failed to save asset %i because it was too big", id);
                     } else {
                          // asset.length = enc.size(); // keep default value cause game doesn't really use length anyway
                         std::memcpy(ptr.data(), enc.data(), enc.size());
@@ -1009,7 +1010,7 @@ class {
                 } else {
                     if(data.size() > asset.length) {
                         error = true;
-                        ErrorDialog.push(std::format("Failed to save asset {} because it was too big", id));
+                        ErrorDialog.pushf("Failed to save asset %i because it was too big", id);
                     } else {
                         std::memcpy(ptr.data(), data.data(), data.size());
                     }
@@ -1078,7 +1079,8 @@ class {
     void draw_options() {
         if(has_exported) {
             const auto fileName = std::filesystem::path(export_path).filename().string();
-            if(ImGui::MenuItem(std::format("Export to {}", fileName).c_str(), "Ctrl+E")) {
+            auto name = "Export to " + fileName;
+            if(ImGui::MenuItem(name.c_str(), "Ctrl+E")) {
                 export_map();
             }
         } else {
