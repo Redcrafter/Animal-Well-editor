@@ -552,7 +552,8 @@ static void SetDefaultPath(GtkWidget* dialog, const char* defaultPath) {
     path.make_preferred();
 
 	if(path.has_filename()) {
-        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), path.filename().string().c_str())
+        // produces a warning for some reason
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), path.filename().string().c_str());
 		path.remove_filename();
 	}
 
