@@ -1,5 +1,6 @@
 #pragma once
 
+#include <format>
 #include <fstream>
 #include <span>
 #include <string>
@@ -189,11 +190,11 @@ struct ShaderProgram {
     ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
         auto fs = cmrc::resources::get_filesystem();
         if(!fs.exists(vertexPath)) {
-            ErrorDialog.pushf("File not found \"%s\"", vertexPath.c_str());
+            ErrorDialog.push(std::format("File not found \"{}\"", vertexPath));
             return;
         }
         if(!fs.exists(fragmentPath)) {
-            ErrorDialog.pushf("File not found \"%s\"", fragmentPath.c_str());
+            ErrorDialog.push(std::format("File not found \"{}\"", fragmentPath));
             return;
         }
 
@@ -217,7 +218,7 @@ struct ShaderProgram {
         glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
         if(!success) {
             glGetShaderInfoLog(vertex, 512, nullptr, infoLog);
-            ErrorDialog.pushf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
+            ErrorDialog.push(std::format("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n{}\n", infoLog));
         }
 
         // similiar for Fragment Shader
@@ -228,7 +229,7 @@ struct ShaderProgram {
         glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
         if(!success) {
             glGetShaderInfoLog(fragment, 512, nullptr, infoLog);
-            ErrorDialog.pushf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
+            ErrorDialog.push(std::format("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n{}\n", infoLog));
         }
 
         // shader Program
@@ -240,7 +241,7 @@ struct ShaderProgram {
         glGetProgramiv(ID, GL_LINK_STATUS, &success);
         if(!success) {
             glGetProgramInfoLog(ID, 512, nullptr, infoLog);
-            ErrorDialog.pushf("ERROR::SHADER::PROGRAM::LINKING_FAILED\n%s\n", infoLog);
+            ErrorDialog.push(std::format("ERROR::SHADER::PROGRAM::LINKING_FAILED\n{}\n", infoLog));
         }
 
         // delete the shaders as they're linked into our program now and no longer necessary
@@ -275,7 +276,6 @@ struct ShaderProgram {
     }
 };
 
-
 struct Vertex {
     glm::vec2 position;
     glm::vec2 uv;
@@ -296,9 +296,9 @@ struct Mesh {
         vbo.Bind();
 
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT        , GL_FALSE, sizeof(Vertex), (void*)0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT        , GL_FALSE, sizeof(Vertex), (void*)(2 * sizeof(float)));
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(2 * sizeof(float)));
         glEnableVertexAttribArray(2);
         glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)(4 * sizeof(float)));
     }

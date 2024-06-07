@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <codecvt>
 #include <cstdio>
 #include <deque>
 #include <filesystem>
@@ -18,6 +19,7 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <misc/cpp/imgui_stdlib.h>
 
 #include "structures/asset.hpp"
 #include "structures/map.hpp"
@@ -37,6 +39,7 @@
 // reduce global state
 // move windows into separate files
 // improve lighting
+// add tile names/descriptions
 
 GLFWwindow* window;
 
@@ -816,7 +819,7 @@ static void dump_assets() {
 
             auto dat = sections.get_rdata_ptr(item.ptr, item.length);
 
-            std::ofstream file("assets/" + std::to_string(i) + ext, std::ios::binary);
+            std::ofstream file(path + "/" + std::to_string(i) + ext, std::ios::binary);
             if(tryDecrypt(item, dat, decrypted)) {
                 file.write((char*)decrypted.data(), decrypted.size());
             } else {
@@ -900,88 +903,232 @@ static void randomize() {
     updateRender();
 }
 
-static void export_exe(bool patch_renderdoc) {
-    static std::string lastPath = std::filesystem::current_path().string();
-    std::string path;
-    auto result = NFD::SaveDialog({{"Game", {"exe"}}}, lastPath.c_str(), path, window);
+class {
+    std::string export_path = std::filesystem::current_path().string() + "/Animal Well.exe";
+    char save_name[15] = "AnimalWell.sav";
+    bool has_exported = false;
+    bool patch_renderdoc = false;
 
-    if(result == NFD::Result::Error) {
-        ErrorDialog.push(NFD::GetError());
-        return;
-    }
-    if(result == NFD::Result::Cancel) {
-        return;
-    }
-    lastPath = path;
+    bool should_open = false;
 
-    try {
-        auto out = rawData;
-        auto sections = getSegmentOffsets(out);
-        auto assets = std::span((asset_entry*)sections.data.data(), 676);
-
-        bool error = false;
-
-        auto replaceAsset = [&](const std::vector<uint8_t>& data, int id) {
-            auto& asset = assets[id];
-            auto ptr = sections.get_rdata_ptr(asset.ptr, asset.length);
-
-            if(((uint8_t)asset.type & 192) == 64) {
-                int key = 0; // 193, 212, 255, 300
-                if(id == 30 || id == 52) key = 1;
-                else if(id == 222 || id == 277 || id == 377) key = 2;
-
-                auto enc = encrypt(data, key);
-
-                if(enc.size() > asset.length) {
-                    error = true;
-                    ErrorDialog.pushf("Failed to save asset %i because it was too big", id);
-                } else {
-                    // asset.length = enc.size(); // keep default value cause game doesn't really use length anyway
-                    std::memcpy(ptr.data(), enc.data(), enc.size());
-                }
-            } else {
-                if(data.size() > asset.length) {
-                    error = true;
-                    ErrorDialog.pushf("Failed to save asset %i because it was too big", id);
-                } else {
-                    std::memcpy(ptr.data(), data.data(), data.size());
-                }
+  public:
+    void draw_options() {
+        if(has_exported) {
+            const auto fileName = std::filesystem::path(export_path).filename().string();
+            if(ImGui::MenuItem(std::format("Export to {}", fileName).c_str(), "Ctrl+S")) {
+                export_exe();
             }
-        };
-
-        for(size_t i = 0; i < 5; i++) {
-            replaceAsset(maps[i].save(), mapIds[i]);
-        }
-        replaceAsset(save_uvs(uvs), 254);
-
-        /*if(patch_steam) {
-            // patch steam restart
-            out[0xEFE6] = 0x48; // MOV AL, 0
-            out[0xEFE7] = 0xc6;
-            out[0xEFE8] = 0xc0;
-            out[0xEFE9] = 0x00;
-
-            out[0xEFEA] = 0x48; // NOP
-            out[0xEFEB] = 0x90;
-        }*/
-
-        if(patch_renderdoc) {
-            const char renderDocPattern[14] = "renderdoc.dll";
-            auto res = std::search(out.begin(), out.end(), std::begin(renderDocPattern), std::end(renderDocPattern));
-
-            if(res != out.end()) {
-                *res = 'l'; // replace first letter with 'l'
+        } else {
+            if(ImGui::MenuItem("Export...", "Ctrl+S")) {
+                export_explicit();
             }
         }
 
-        if(!error) {
-            std::ofstream file(path, std::ios::binary);
-            file.write(out.data(), out.size());
+        if(ImGui::MenuItem("Export As...", "Ctrl+Shift+S")) {
+            export_explicit();
         }
-    } catch(std::exception& e) {
-        ErrorDialog.push(e.what());
     }
-}
+
+    void draw_popup() {
+        if(should_open) {
+            ImGui::OpenPopup("Export options");
+            should_open = false;
+        }
+
+        if(ImGui::BeginPopupModal("Export options")) {
+            ImGui::InputText("path", &export_path);
+            ImGui::Checkbox("patch renderdoc", &patch_renderdoc);
+
+            ImGui::InputText("save name", save_name, sizeof(save_name));
+
+            if(ImGui::Button("Export")) {
+                export_exe();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void export_explicit() {
+        std::string path;
+        auto result = NFD::SaveDialog({{"Game", {"exe"}}}, export_path.c_str(), path, window);
+
+        if(result == NFD::Result::Error) {
+            ErrorDialog.push(NFD::GetError());
+            return;
+        }
+        if(result == NFD::Result::Cancel) {
+            return;
+        }
+
+        export_path = path;
+
+        // options_popup();
+        should_open = true;
+    }
+    void export_implicit() {
+        if(has_exported) {
+            export_exe();
+        } else {
+            export_explicit();
+        }
+    }
+
+  private:
+    void export_exe() {
+        try {
+            auto out = rawData;
+            auto sections = getSegmentOffsets(out);
+            auto assets = std::span((asset_entry*)sections.data.data(), 676);
+
+            bool error = false;
+
+            auto replaceAsset = [&](const std::vector<uint8_t>& data, int id) {
+                auto& asset = assets[id];
+                auto ptr = sections.get_rdata_ptr(asset.ptr, asset.length);
+
+                if(((uint8_t)asset.type & 192) == 64) {
+                    int key = 0; // 193, 212, 255, 300
+                    if(id == 30 || id == 52) key = 1;
+                    else if(id == 222 || id == 277 || id == 377) key = 2;
+
+                    auto enc = encrypt(data, key);
+
+                    if(enc.size() > asset.length) {
+                        error = true;
+                        ErrorDialog.push(std::format("Failed to save asset {} because it was too big", id));
+                    } else {
+                         // asset.length = enc.size(); // keep default value cause game doesn't really use length anyway
+                        std::memcpy(ptr.data(), enc.data(), enc.size());
+                    }
+                } else {
+                    if(data.size() > asset.length) {
+                        error = true;
+                        ErrorDialog.push(std::format("Failed to save asset {} because it was too big", id));
+                    } else {
+                        std::memcpy(ptr.data(), data.data(), data.size());
+                    }
+                }
+            };
+
+            for(size_t i = 0; i < 5; i++) {
+                replaceAsset(maps[i].save(), mapIds[i]);
+            }
+            replaceAsset(save_uvs(uvs), 254);
+
+            /*if(patch_steam) {
+                // patch steam restart
+                out[0xEFE6] = 0x48; // MOV AL, 0
+                out[0xEFE7] = 0xc6;
+                out[0xEFE8] = 0xc0;
+                out[0xEFE9] = 0x00;
+
+                out[0xEFEA] = 0x48; // NOP
+                out[0xEFEB] = 0x90;
+            }*/
+
+            if(patch_renderdoc) {
+                auto res = std::ranges::search(out, "renderdoc.dll").begin();
+                if(res != out.end()) {
+                    *res = 'l'; // replace first letter with 'l'
+                }
+            }
+
+            {
+                const char* default_save = (const char*)(L"AnimalWell.sav");
+                auto res = std::search(out.begin(), out.end(), default_save, default_save + 30);
+
+                if(res != out.end()) {
+                    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+                    auto wstr = converter.from_bytes(save_name);
+
+                    for(int i = 0; i < wstr.size() + 1; ++i) {
+                        auto c = wstr[i];
+                        *res = c & 0xFF;
+                        ++res;
+                        *res = c >> 8;
+                        ++res;
+                    }
+                }
+            }
+
+            if(!error) {
+                std::ofstream file(export_path, std::ios::binary);
+                file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+                file.write(out.data(), out.size());
+
+                has_exported = true;
+            }
+        } catch(std::exception& e) {
+            ErrorDialog.push(e.what());
+        }
+    }
+} exe_exporter;
+
+class {
+    std::string export_path = std::filesystem::current_path().string() + "/map.map";
+    bool has_exported = false;
+
+  public:
+    void draw_options() {
+        if(has_exported) {
+            const auto fileName = std::filesystem::path(export_path).filename().string();
+            if(ImGui::MenuItem(std::format("Export to {}", fileName).c_str(), "Ctrl+E")) {
+                export_map();
+            }
+        } else {
+            if(ImGui::MenuItem("Export...", "Ctrl+E")) {
+                export_explicit();
+            }
+        }
+
+        if(ImGui::MenuItem("Export As...", "Ctrl+Shift+E")) {
+            export_explicit();
+        }
+    }
+
+    void export_explicit() {
+        std::string path;
+        auto result = NFD::SaveDialog({{"Map", {"map"}}}, export_path.c_str(), path, window);
+
+        if(result == NFD::Result::Error) {
+            ErrorDialog.push(NFD::GetError());
+            return;
+        }
+        if(result == NFD::Result::Cancel) {
+            return;
+        }
+
+        export_path = path;
+        export_map();
+    }
+    void export_implicit() {
+        if(has_exported) {
+            export_map();
+        } else {
+            export_explicit();
+        }
+    }
+
+  private:
+    void export_map() {
+        try {
+            auto data = maps[selectedMap].save();
+            std::ofstream file(export_path, std::ios::binary);
+            file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+            file.write((char*)data.data(), data.size());
+
+            has_exported = true;
+        } catch(std::exception& e) {
+            ErrorDialog.push(e.what());
+        }
+    }
+} map_exporter;
 
 // Tips: Use with ImGuiDockNodeFlags_PassthruCentralNode!
 // The limitation with this call is that your window won't have a menu bar.
@@ -1016,16 +1163,10 @@ static ImGuiID DockSpaceOverViewport() {
             if(ImGui::MenuItem("Load Game")) {
                 load_game_dialog();
             }
-            if(ImGui::MenuItem("Dump assets")) {
-                dump_assets();
-            }
 
-            ImGui::Separator();
-            static bool patch_renderdoc = false;
-            ImGui::Checkbox("patch renderdoc", &patch_renderdoc);
-            if(ImGui::MenuItem("Export exe")) {
-                export_exe(patch_renderdoc);
-            }
+            ImGui::BeginDisabled(rawData.empty());
+            exe_exporter.draw_options();
+            ImGui::EndDisabled();
 
             ImGui::Separator();
 
@@ -1056,25 +1197,18 @@ static ImGuiID DockSpaceOverViewport() {
                     }
                 }
             }
-            if(ImGui::MenuItem("Export Map")) {
-                static std::string lastPath = std::filesystem::current_path().string();
-                std::string path;
-                auto result = NFD::SaveDialog({{"Map", {"map"}}}, lastPath.c_str(), path, window);
 
-                if(result == NFD::Result::Error) {
-                    ErrorDialog.push(NFD::GetError());
-                } else if(result == NFD::Result::Okay) {
-                    lastPath = path;
-                    auto data = maps[selectedMap].save();
-                    try {
-                        std::ofstream file(path, std::ios::binary);
-                        file.write((char*)data.data(), data.size());
-                        file.close();
-                    } catch(std::exception& e) {
-                        ErrorDialog.push(e.what());
-                    }
-                }
+            ImGui::BeginDisabled(rawData.empty());
+            map_exporter.draw_options();
+            ImGui::EndDisabled();
+
+            ImGui::Separator();
+
+            ImGui::BeginDisabled(rawData.empty());
+            if(ImGui::MenuItem("Dump assets")) {
+                dump_assets();
             }
+            ImGui::EndDisabled();
 
             ImGui::EndMenu();
         }
@@ -1172,6 +1306,22 @@ static bool GetKeyUp(ImGuiKey key) {
     return !dat->Down && dat->DownDurationPrev != -1;
 }
 
+static glm::ivec2 arrow_key_dir() {
+    if(ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+        return glm::ivec2(0, -1);
+    }
+    if(ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+        return glm::ivec2(0, 1);
+    }
+    if(ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+        return glm::ivec2(-1, 0);
+    }
+    if(ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+        return glm::ivec2(1, 0);
+    }
+    return glm::ivec2(0);
+}
+
 static void handle_input() {
     if(rawData.empty()) return; // no map loaded
 
@@ -1191,19 +1341,8 @@ static void handle_input() {
             mode0_selection = screen_to_world(mousePos);
         }
 
-        if (mode0_selection != glm::ivec2(-1,-1)) {
-            if(ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-                mode0_selection += glm::ivec2(0,-1);
-            }
-            if(ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-                mode0_selection += glm::ivec2(0,1);
-            }
-            if(ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-                mode0_selection += glm::ivec2(-1,0);
-            }
-            if(ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-                mode0_selection += glm::ivec2(1,0);
-            }
+        if(mode0_selection != glm::ivec2(-1, -1)) {
+            mode0_selection += arrow_key_dir();
         }
 
         if(GetKey(ImGuiKey_Escape)) {
@@ -1236,18 +1375,7 @@ static void handle_input() {
                     updateRender();
                 }
             }
-            if(ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-                selection_handler.move(glm::ivec2(0,-1));
-            }
-            if(ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-                selection_handler.move(glm::ivec2(0,1));
-            }
-            if(ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-                selection_handler.move(glm::ivec2(-1,0));
-            }
-            if(ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-                selection_handler.move(glm::ivec2(1,0));
-            }
+            selection_handler.move(arrow_key_dir());
         }
 
         if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_V)) {
@@ -1276,6 +1404,16 @@ static void handle_input() {
             }
         } else if(!selecting && GetKey(ImGuiKey_MouseLeft)) {
             view = glm::translate(view, glm::vec3(-delta / gScale, 0));
+        }
+    }
+
+    if(GetKey(ImGuiKey_ModCtrl)) {
+        if(GetKey(ImGuiKey_ModShift)) {
+            if(GetKeyDown(ImGuiKey_S)) exe_exporter.export_explicit();
+            if(GetKeyDown(ImGuiKey_E)) map_exporter.export_explicit();
+        } else {
+            if(GetKeyDown(ImGuiKey_S)) exe_exporter.export_implicit();
+            if(GetKeyDown(ImGuiKey_E)) map_exporter.export_implicit();
         }
     }
 }
@@ -1343,7 +1481,7 @@ static void DrawPreviewWindow() {
             if(ImGui::BeginTable("tile_flags_table", 2)) {
                 int flags = tile.flags;
 
-                if(tile_layer == 2) ImGui::BeginDisabled();
+                ImGui::BeginDisabled(tile_layer == 2);
                 // clang-format off
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
@@ -1353,8 +1491,7 @@ static void DrawPreviewWindow() {
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
                 ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
                 // clang-format on
-
-                if(tile_layer == 2) ImGui::EndDisabled();
+                ImGui::EndDisabled();
 
                 if(flags != tile.flags) {
                     room->tiles[tile_layer][tp.y][tp.x].flags = flags;
@@ -1365,9 +1502,9 @@ static void DrawPreviewWindow() {
             }
 
             ImGui::SeparatorText("Tile Data");
-            if(tile_layer == 2) ImGui::BeginDisabled();
+            ImGui::BeginDisabled(tile_layer == 2);
             DrawUvFlags(uvs[tile.tile_id]);
-            if(tile_layer == 2) ImGui::EndDisabled();
+            ImGui::EndDisabled();
 
             if(sprites.contains(tile.tile_id)) {
                 // todo: lazy implementation could be improved with map
@@ -1676,10 +1813,9 @@ int runViewer() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;   // Enable Keyboard Controls
-    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;       // Enable Docking
-    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;  // Enable Multi-Viewport / Platform Windows
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
     // io.ConfigViewportsNoAutoMerge = true;
     // io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -1758,7 +1894,7 @@ int runViewer() {
         handle_input();
         DockSpaceOverViewport();
         ErrorDialog.draw();
-        // ImGui::ShowDemoWindow();
+        exe_exporter.draw_popup();
 
         // skip rendering if no data is loaded
         if(!rawData.empty()) {

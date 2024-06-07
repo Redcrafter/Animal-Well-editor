@@ -1,6 +1,7 @@
 #include "nfd.h"
 #include <cassert>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 using namespace NFD;
@@ -172,30 +173,31 @@ static Result SetDefaultPath(IFileDialog* dialog, const char* defaultPath) {
 	if(!defaultPath || strlen(defaultPath) == 0)
 		return Result::Okay;
 
-	wchar_t* defaultPathW = nullptr;
-	CopyNFDCharToWChar(defaultPath, &defaultPathW);
+	auto path = std::filesystem::path(defaultPath);
+    path.make_preferred();
+
+	if(path.has_filename()) {
+		dialog->SetFileName(path.filename().wstring().c_str());
+		path.remove_filename();
+	}
 
 	IShellItem* folder;
-	HRESULT result = SHCreateItemFromParsingName(defaultPathW, nullptr, IID_PPV_ARGS(&folder));
+	HRESULT result = SHCreateItemFromParsingName(path.wstring().c_str(), nullptr, IID_PPV_ARGS(&folder));
 
 	// Valid non results.
 	if(result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) || result == HRESULT_FROM_WIN32(ERROR_INVALID_DRIVE)) {
-		delete defaultPathW;
 		return Result::Okay;
 	}
 
 	if(!SUCCEEDED(result)) {
 		NFDi_SetError("Error creating ShellItem");
-		delete defaultPathW;
 		return Result::Error;
 	}
 
 	// Could also call SetDefaultFolder(), but this guarantees defaultPath -- more consistency across API.
 	dialog->SetFolder(folder);
 
-	delete defaultPathW;
 	folder->Release();
-
 	return Result::Okay;
 }
 
@@ -546,12 +548,20 @@ static void SetDefaultPath(GtkWidget* dialog, const char* defaultPath) {
 	if(!defaultPath || strlen(defaultPath) == 0)
 		return;
 
+    auto path = std::filesystem::path(defaultPath);
+    path.make_preferred();
+
+	if(path.has_filename()) {
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), path.filename().string().c_str())
+		path.remove_filename();
+	}
+
 	/* GTK+ manual recommends not specifically setting the default path.
 	   We do it anyway in order to be consistent across platforms.
 
 	   If consistency with the native OS is preferred, this is the line
 	   to comment out. -ml */
-	gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog), defaultPath);
+	gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog), path.string().c_str());
 }
 
 static void WaitForCleanup() {
