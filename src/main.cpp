@@ -1034,7 +1034,8 @@ class {
             }*/
 
             if(patch_renderdoc) {
-                auto res = std::ranges::search(out, "renderdoc.dll").begin();
+                constexpr char pattern[] = "renderdoc.dll";
+                auto res = std::search(out.begin(), out.end(), std::begin(pattern), std::end(pattern));
                 if(res != out.end()) {
                     *res = 'l'; // replace first letter with 'l'
                 }
