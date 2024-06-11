@@ -38,7 +38,6 @@
 // TODO:
 // reduce global state
 // move windows into separate files
-// improve lighting
 // add tile names/descriptions
 
 GLFWwindow* window;
@@ -59,7 +58,7 @@ glm::vec2 lastMousePos = glm::vec2(-1);
 glm::vec2 screenSize;
 
 std::vector<Textured_Framebuffer*> framebuffers;
-std::unique_ptr<Mesh> fg_tiles, bg_tiles, bg_text, lights, overlay;
+std::unique_ptr<Mesh> fg_tiles, bg_tiles, bg_text, overlay;
 
 int selectedMap = 0;
 
@@ -82,7 +81,6 @@ glm::vec4 bg_tex_color {0.5, 0.5, 0.5, 1};
 bool show_fg = true;
 bool show_bg = true;
 bool show_bg_tex = true;
-bool do_lighting = false;
 bool room_grid = false;
 bool show_water = false;
 
@@ -148,7 +146,6 @@ static void updateRender() {
     renderMap(maps[selectedMap], uvs, sprites, *fg_tiles, 0);
     renderMap(maps[selectedMap], uvs, sprites, *bg_tiles, 1);
     renderBgs(maps[selectedMap], *bg_text);
-    renderLights(maps[selectedMap], uvs, *lights);
 }
 
 static void push_undo(std::unique_ptr<HistoryItem> item) {
@@ -273,39 +270,6 @@ static void redo() {
     selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
 
     undo_buffer.push_back(std::move(el));
-}
-
-// helper function renders a quad over the entire screen with uv fron (0,0) to (1,1)
-// very useful for processing intermediate framebuffers
-static void RenderQuad() {
-    static std::unique_ptr<VAO> quadVAO;
-    static std::unique_ptr<VBO> quadVBO;
-
-    if(quadVAO == nullptr) {
-        // clang-format off
-        const float quadVertices[] = {
-            // positions  // texture Coords
-            -1.0f,  1.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f,
-             1.0f,  1.0f, 1.0f, 1.0f,
-             1.0f, -1.0f, 1.0f, 0.0f,
-        };
-        // clang-format on
-
-        quadVAO = std::make_unique<VAO>();
-        quadVAO->Bind();
-
-        quadVBO = std::make_unique<VBO>(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
-        quadVBO->BufferData(quadVertices, sizeof(quadVertices));
-
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    }
-    glBindVertexArray(quadVAO->id);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glBindVertexArray(0);
 }
 
 static ImVec2 toImVec(const glm::vec2 vec) {
@@ -1229,7 +1193,6 @@ static ImGuiID DockSpaceOverViewport() {
             ImGui::ColorEdit4("bg tile color", &bg_color.r);
             ImGui::Checkbox("Background Texture", &show_bg_tex);
             ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
-            ImGui::Checkbox("Apply lighting", &do_lighting);
             ImGui::Checkbox("Show Room Grid", &room_grid);
             ImGui::Checkbox("Show Water Level", &show_water);
 
@@ -1289,7 +1252,7 @@ static void HelpMarker(const char* desc) {
     }
 }
 
-glm::ivec2 screen_to_world(glm::vec2 pos) {
+static glm::ivec2 screen_to_world(glm::vec2 pos) {
     auto mp = glm::vec4((pos / screenSize) * 2.0f - 1.0f, 0, 1);
     mp.y = -mp.y;
     return glm::ivec2(glm::inverse(MVP) * mp) / 8;
@@ -1847,26 +1810,13 @@ int runViewer() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram tile_shader("src/shaders/tile.vs", "src/shaders/tile.fs");
-    ShaderProgram bg_shader("src/shaders/bg.vs", "src/shaders/bg.fs");
-    ShaderProgram light_shader("src/shaders/light.vs", "src/shaders/light.fs");
-    ShaderProgram merge_shader("src/shaders/merge.vs", "src/shaders/merge.fs");
-
-    merge_shader.Use();
-    merge_shader.setInt("tiles", 0);
-    merge_shader.setInt("lights", 1);
+    ShaderProgram flat_shader("src/shaders/flat.vs", "src/shaders/flat.fs");
+    ShaderProgram textured_shader("src/shaders/textured.vs", "src/shaders/textured.fs");
 
     fg_tiles = std::make_unique<Mesh>();
     bg_tiles = std::make_unique<Mesh>();
     bg_text = std::make_unique<Mesh>();
-    lights = std::make_unique<Mesh>();
     overlay = std::make_unique<Mesh>();
-
-    Textured_Framebuffer light_fb(1280, 720);
-    Textured_Framebuffer tile_fb(1280, 720);
-
-    framebuffers.push_back(&light_fb);
-    framebuffers.push_back(&tile_fb);
 
 #pragma endregion
 
@@ -1910,70 +1860,31 @@ int runViewer() {
             draw_overlay();
             draw_water_level();
 
-            // 1. light pass
-            if(do_lighting) {
-                glClearColor(0.0, 0.0, 0.0, 1.0);
-                light_fb.Bind();
-                glClear(GL_COLOR_BUFFER_BIT);
-
-                light_shader.Use();
-                light_shader.setMat4("MVP", MVP);
-
-                lights->Draw();
-            } else {
-                glClearColor(1.0, 1.0, 1.0, 1.0);
-                light_fb.Bind();
-                glClear(GL_COLOR_BUFFER_BIT);
-            }
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-            // 2. main pass
-            tile_fb.Bind();
-            glClearColor(0.0, 0.0, 0.0, 0.0);
+            glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
             glClear(GL_COLOR_BUFFER_BIT);
 
-            if(show_bg_tex) {
-                bg_shader.Use();
-                bg_shader.setMat4("MVP", MVP);
-                bg_shader.setVec4("color", bg_tex_color);
+            textured_shader.Use();
+            textured_shader.setMat4("MVP", MVP);
 
-                glActiveTexture(GL_TEXTURE0);
+            if(show_bg_tex) { // draw background textures
+                textured_shader.setVec4("color", bg_tex_color);
                 bg_tex->Bind();
                 bg_text->Draw();
             }
 
-            tile_shader.Use();
-            tile_shader.setMat4("MVP", MVP);
-
-            glActiveTexture(GL_TEXTURE0);
             atlas->Bind();
-
-            if(show_bg) {
-                tile_shader.setVec4("color", bg_color);
+            if(show_bg) { // draw background tiles
+                textured_shader.setVec4("color", bg_color);
                 bg_tiles->Draw();
             }
-            if(show_fg) {
-                tile_shader.setVec4("color", fg_color);
+            if(show_fg) { // draw foreground tiles
+                textured_shader.setVec4("color", fg_color);
                 fg_tiles->Draw();
             }
 
-            // 3. final merge pass
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-            glClear(GL_COLOR_BUFFER_BIT);
-
-            merge_shader.Use();
-            glActiveTexture(GL_TEXTURE0);
-            tile_fb.tex.Bind();
-            glActiveTexture(GL_TEXTURE1);
-            light_fb.tex.Bind();
-
-            RenderQuad();
-
-            // 4. draw selection vertices over that
-            light_shader.Use();
-            light_shader.setMat4("MVP", MVP);
-
+            // draw overlay (selection, water level)
+            flat_shader.Use();
+            flat_shader.setMat4("MVP", MVP);
             overlay->Buffer();
             overlay->Draw();
         } else {
@@ -2011,8 +1922,7 @@ int runViewer() {
 }
 
 int main(int, char**) {
-    runViewer();
-    return 0;
+    return runViewer();
 }
 
 #ifdef _WIN32
