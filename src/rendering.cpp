@@ -29,10 +29,10 @@ static void renderVine(int x, int y, int layer, const Room& room, Mesh& mesh) {
         int8_t x_offset = 0;
         bool has_flower = false;
 
-        const auto x_hash = (int)std::truncf(std::fabsf(std::remainderf(std::sinf(x_pos * 17.5362300872802734375f + y_pos * 105.61455535888671875f) * 43758.546875f, 1.0f)) * 4.0f);
+        const auto x_hash = (int)std::truncf(fabsf(std::remainderf(sinf(x_pos * 17.5362300872802734375f + y_pos * 105.61455535888671875f) * 43758.546875f, 1.0f)) * 4.0f);
 
         for(int j = 1; j < segments; j++) {
-            const auto y_hash = (int)std::truncf(std::fabsf(std::remainderf(std::sinf(x_pos * 649.49005126953125f + y_pos * 3911.650146484375f) * 43758.546875f, 1)) * 6.0f);
+            const auto y_hash = (int)std::truncf(fabsf(std::remainderf(sinf(x_pos * 649.49005126953125f + y_pos * 3911.650146484375f) * 43758.546875f, 1)) * 6.0f);
 
             int segment_length;
             if((j & 1) == 0) {
