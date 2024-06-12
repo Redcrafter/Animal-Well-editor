@@ -51,7 +51,7 @@ jobs:
         submodules: recursive
 
     - name: Install deps
-      if: ${{ matrix.os == 'ubuntu-latest' }}
+      if: ${{ matrix.os ~= 'ubuntu' }}
       run: sudo apt install -y libgtk2.0-dev mesa-utils freeglut3-dev libwayland-dev libxkbcommon-dev
 
     - name: Set reusable strings
@@ -60,6 +60,11 @@ jobs:
       shell: bash
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+        if [[ "$VERSION" =~ "ubuntu" ]]; then
+          echo "build-output=${{ github.workspace }}/build/editor" >> "$GITHUB_OUTPUT"
+        else
+          echo "build-output=${{ github.workspace }}/build/${{ matrix.build_type }}/editor.exe" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
@@ -79,7 +84,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: "editor-${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}"
-        path: "${{ steps.strings.outputs.build-output-dir }}/editor*"
+        path: ${{ steps.strings.outputs.build-output }}
 
     #- name: Test
     #  working-directory: ${{ steps.strings.outputs.build-output-dir }}
