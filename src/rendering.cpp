@@ -1,4 +1,5 @@
 #include "rendering.hpp"
+#include <math.h>
 
 #include "glm/glm.hpp"
 
