@@ -2,9 +2,70 @@
 
 #include "glm/glm.hpp"
 
-void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<uint32_t, SpriteData>& sprites, Mesh& mesh, int layer) {
-    auto atlasSize = glm::vec2(1024, 2048);
+constexpr auto atlasSize = glm::vec2(1024, 2048);
 
+constexpr bool isVine(uint16_t tile_id) {
+    return tile_id == 0xc1 || tile_id == 0xf0 || tile_id == 0x111 || tile_id == 0x138;
+}
+
+static void renderVine(int x, int y, int layer, const Room& room, Mesh& mesh) {
+    if(y > 0 && isVine(room.tiles[layer][y - 1][x].tile_id)) return; // is not the first tile
+
+    const auto tile_id = room.tiles[layer][y][x].tile_id;
+    const auto room_pos = glm::vec2(room.x * 40 * 8, room.y * 22 * 8);
+
+    int segments = 4;
+    for(size_t i = y + 1; i < 22; i++) {
+        if(!isVine(room.tiles[layer][i][x].tile_id)) break;
+        segments += 2;
+    }
+    const auto strand_count = (tile_id == 273) ? 2 : 3;
+
+    for(int i = 0; i < strand_count; i++) {
+        const auto x_pos = i * ((tile_id == 273) + 3) + (x * 8);
+        auto y_pos = y * 8;
+
+        int8_t x_offset = 0;
+        bool has_flower = false;
+
+        const auto x_hash = (int)std::truncf(std::fabsf(std::remainderf(std::sinf(x_pos * 17.5362300872802734375f + y_pos * 105.61455535888671875f) * 43758.546875f, 1.0f)) * 4.0f);
+
+        for(int j = 1; j < segments; j++) {
+            const auto y_hash = (int)std::truncf(std::fabsf(std::remainderf(std::sinf(x_pos * 649.49005126953125f + y_pos * 3911.650146484375f) * 43758.546875f, 1)) * 6.0f);
+
+            int segment_length;
+            if((j & 1) == 0) {
+                segment_length = 7 - y_hash;
+            } else {
+                segment_length = y_hash + 1;
+            }
+
+            constexpr char lookup[4] = {0, -1, 0, 1};
+            x_offset = lookup[(x_hash + j - 1) & 3];
+            if(j == 1) x_offset = 0; // segments always use offsets from previous index for some reason?
+
+            auto t = glm::vec2(x_pos + x_offset, y_pos) + room_pos;
+            mesh.AddRectFilled(t, t + glm::vec2(1, segment_length), {}, {}, IM_COL32(69, 255, 145, 255));
+
+            y_pos += segment_length;
+
+            if(j == segments - 2) {
+                has_flower = ((x_pos + y_pos * 13) & 3) == 1;
+            }
+        }
+
+        if(has_flower) {
+            // uvs for tile 312
+            auto uv = glm::vec2(152, 48);
+            auto size = glm::vec2(3, 3);
+
+            auto t = glm::vec2(x_pos + x_offset - 1, y_pos) + room_pos;
+            mesh.AddRectFilled(t, t + size, uv / atlasSize, (uv + size) / atlasSize);
+        }
+    }
+}
+
+void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<uint32_t, SpriteData>& sprites, Mesh& mesh, int layer, bool accurate_vines) {
     mesh.clear();
 
     for(auto&& room : map.rooms) {
@@ -13,6 +74,11 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
                 auto tile = room.tiles[layer][y2][x2];
                 // assert((tile & 0xFFFF0000) == 0);
                 if(tile.tile_id == 0 || tile.tile_id >= 0x400) continue;
+
+                if(accurate_vines && isVine(tile.tile_id)) {
+                    renderVine(x2, y2, layer, room, mesh);
+                    continue;
+                }
 
                 auto pos = glm::vec2(x2 + room.x * 40, y2 + room.y * 22);
                 pos *= 8;
@@ -181,7 +247,7 @@ void renderBgs(const Map& map, Mesh& mesh) {
         glm::vec2(320 * 3, 180 * 1) / texSize,
         glm::vec2(320 * 0, 180 * 3) / texSize,
         glm::vec2(320 * 1, 180 * 3) / texSize,
-        glm::vec2(320 * 2, 180 * 2) / texSize
+        glm::vec2(320 * 2, 180 * 2) / texSize,
     };
 
     for(auto&& room : map.rooms) {

@@ -83,6 +83,7 @@ bool show_bg = true;
 bool show_bg_tex = true;
 bool room_grid = false;
 bool show_water = false;
+bool accurate_vines = true;
 
 constexpr auto room_size = glm::ivec2(40, 22);
 constexpr const char* modes[] = {"View", "Edit"};
@@ -143,8 +144,8 @@ static void onResize(GLFWwindow* window, int width, int height) {
 }
 
 static void updateRender() {
-    renderMap(maps[selectedMap], uvs, sprites, *fg_tiles, 0);
-    renderMap(maps[selectedMap], uvs, sprites, *bg_tiles, 1);
+    renderMap(maps[selectedMap], uvs, sprites, *fg_tiles, 0, accurate_vines);
+    renderMap(maps[selectedMap], uvs, sprites, *bg_tiles, 1, accurate_vines);
     renderBgs(maps[selectedMap], *bg_text);
 }
 
@@ -1195,6 +1196,9 @@ static ImGuiID DockSpaceOverViewport() {
             ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
             ImGui::Checkbox("Show Room Grid", &room_grid);
             ImGui::Checkbox("Show Water Level", &show_water);
+            if(ImGui::Checkbox("Accurate vines", &accurate_vines)) {
+                updateRender();
+            }
 
             ImGui::EndMenu();
         }
