@@ -51,7 +51,7 @@ jobs:
         submodules: recursive
 
     - name: Install deps
-      if: ${{ matrix.os ~= 'ubuntu' }}
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: sudo apt install -y libgtk2.0-dev mesa-utils freeglut3-dev libwayland-dev libxkbcommon-dev
 
     - name: Set reusable strings
@@ -60,7 +60,7 @@ jobs:
       shell: bash
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
-        if [[ "$VERSION" =~ "ubuntu" ]]; then
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           echo "build-output=${{ github.workspace }}/build/editor" >> "$GITHUB_OUTPUT"
         else
           echo "build-output=${{ github.workspace }}/build/${{ matrix.build_type }}/editor.exe" >> "$GITHUB_OUTPUT"
