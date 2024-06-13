@@ -1,7 +1,7 @@
 #include "rendering.hpp"
 #include <math.h>
 
-#include "glm/glm.hpp"
+#include <glm/glm.hpp>
 
 constexpr auto atlasSize = glm::vec2(1024, 2048);
 

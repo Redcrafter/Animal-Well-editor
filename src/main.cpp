@@ -1,12 +1,10 @@
 #include <algorithm>
-#include <array>
 #include <cstdio>
 #include <deque>
 #include <filesystem>
 #include <random>
 #include <set>
 #include <span>
-#include <unordered_map>
 
 #include "glStuff.hpp" // has to be included before glfw
 #include <GLFW/glfw3.h>
@@ -20,6 +18,9 @@
 #include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 
+#include <nfd.h>
+#include <stb_image_write.h>
+
 #include "game_data.hpp"
 #include "history.hpp"
 #include "map_slice.hpp"
@@ -30,9 +31,6 @@
 #include "windows/sprite_viewer.hpp"
 #include "windows/tile_list.hpp"
 #include "windows/tile_viewer.hpp"
-#include "windows/search.hpp"
-
-#include "nfd.h"
 
 // TODO:
 // reduce global state
@@ -567,8 +565,6 @@ class {
   private:
     void export_exe() {
         try {
-            bool error = false;
-
             auto out = game_data; // make copy for exporting
             out.apply_changes();
 
@@ -644,11 +640,81 @@ class {
     }
 } map_exporter;
 
+void full_map_screenshot(ShaderProgram& textured_shader) {
+    static std::string export_path = std::filesystem::current_path().string() + "/map.png";
+    std::string path;
+    auto result = NFD::SaveDialog({{"png", {"png"}}}, export_path.c_str(), path, window);
+
+    if(result == NFD::Result::Error) {
+        error_dialog.push(NFD::GetError());
+        return;
+    }
+    if(result == NFD::Result::Cancel) {
+        return;
+    }
+    export_path = path;
+
+    auto& map = game_data.maps[selectedMap];
+    auto room_size = glm::ivec2(40, 22);
+    auto size = glm::ivec2(map.size.x, map.size.y) * room_size * 8;
+
+    glViewport(0, 0, size.x, size.y);
+
+    Textured_Framebuffer fb(size.x, size.y);
+    fb.Bind();
+
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glm::mat4 MVP = glm::ortho<float>(0, size.x, 0, size.y, 0.0f, 100.0f) *
+                    glm::lookAt(
+                        glm::vec3(map.offset * room_size * 8, 3),
+                        glm::vec3(map.offset * room_size * 8, 0),
+                        glm::vec3(0, 1, 0));
+
+    textured_shader.Use();
+    textured_shader.setMat4("MVP", MVP);
+
+    if(show_bg_tex) { // draw background textures
+        textured_shader.setVec4("color", bg_tex_color);
+        bg_tex->Bind();
+        bg_text->Draw();
+    }
+
+    atlas->Bind();
+    if(show_bg) { // draw background tiles
+        textured_shader.setVec4("color", bg_color);
+        bg_tiles->Draw();
+    }
+    if(show_fg) { // draw foreground tiles
+        textured_shader.setVec4("color", fg_color);
+        fg_tiles->Draw();
+    }
+
+    // draw overlay (selection, water level)
+    // flat_shader.Use();
+    // flat_shader.setMat4("MVP", MVP);
+    // overlay->Buffer();
+    // overlay->Draw();
+
+    std::vector<uint8_t> img(size.x * size.y * sizeof(uint32_t));
+    fb.tex.Bind();
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
+    stbi_write_png(path.c_str(), size.x, size.y, 4, img.data(), size.x * sizeof(uint32_t));
+
+    // restore viewport
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+    glViewport(0, 0, width, height);
+}
+
 // Tips: Use with ImGuiDockNodeFlags_PassthruCentralNode!
 // The limitation with this call is that your window won't have a menu bar.
 // Even though we could pass window flags, it would also require the user to be able to call BeginMenuBar() somehow meaning we can't Begin/End in a single function.
 // But you can also use BeginMainMenuBar(). If you really want a menu bar inside the same window as the one hosting the dockspace, you will need to copy this code somewhere and tweak it.
-static ImGuiID DockSpaceOverViewport() {
+static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
     auto viewport = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -750,6 +816,8 @@ static ImGuiID DockSpaceOverViewport() {
         }
 
         if(ImGui::BeginMenu("Tools")) {
+            ImGui::BeginDisabled(!game_data.loaded);
+
             if(ImGui::MenuItem("Randomize items")) {
                 randomize();
             }
@@ -758,6 +826,10 @@ static ImGuiID DockSpaceOverViewport() {
                     uv.blocks_light = false;
                 }
             }
+            if(ImGui::MenuItem("Export Full Map Screenshot")) {
+                full_map_screenshot(textured_shader);
+            }
+            ImGui::EndDisabled();
 
             ImGui::EndMenu();
         }
@@ -1397,7 +1469,7 @@ int runViewer() {
         MVP = projection * view;
 
         handle_input();
-        DockSpaceOverViewport();
+        DockSpaceOverViewport(textured_shader);
         error_dialog.draw();
         exe_exporter.draw_popup();
 

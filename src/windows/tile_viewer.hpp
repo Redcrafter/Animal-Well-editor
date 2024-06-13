@@ -3,7 +3,7 @@
 #include "../game_data.hpp"
 #include "../rendering.hpp"
 
-inline bool DrawUvFlags(uv_data& uv);
+bool DrawUvFlags(uv_data& uv);
 
 class TileViewer {
   public:
