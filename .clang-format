@@ -3,6 +3,7 @@ IndentWidth: 4
 
 AlignTrailingComments:
   Kind: Leave
+AllowShortCaseLabelsOnASingleLine: true
 AllowShortIfStatementsOnASingleLine: AllIfsAndElse
 ColumnLimit: 0
 # Cpp11BracedListStyle: false
