@@ -4,6 +4,7 @@
 #include <cstring>
 #include <optional>
 #include <span>
+#include <stdexcept>
 
 #include <glm/glm.hpp>
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <stdexcept>
 #include <span>
+#include <stdexcept>
 
 #include <glm/glm.hpp>
 
@@ -255,6 +255,41 @@ inline SpriteData parse_sprite(std::span<const uint8_t> data) {
     ptr += subs_size;
 
     out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr + layer_size)};
+
+    return out;
+}
+
+inline std::vector<uint8_t> save_sprite(const SpriteData& sprite) {
+    auto anim_size = sprite.animations.size() * sizeof(SpriteAnimation);
+    auto comp_size = sprite.compositions.size();
+    auto subs_size = sprite.sub_sprites.size() * sizeof(SubSprite);
+    auto layer_size = sprite.layers.size() * sizeof(SpriteLayer);
+
+    std::vector<uint8_t> out(0x30 + anim_size + comp_size + subs_size + layer_size);
+
+    auto ptr = out.data();
+    // magic
+    *(int*)ptr = 0x0003AC1D;
+    *(uint16_t*)(ptr + 4) = sprite.size.x;
+    *(uint16_t*)(ptr + 6) = sprite.size.y;
+    *(uint16_t*)(ptr + 8) = sprite.layers.size();
+    *(uint16_t*)(ptr + 10) = sprite.composition_count;
+    *(uint8_t*)(ptr + 12) = sprite.sub_sprites.size();
+    *(uint8_t*)(ptr + 13) = sprite.animations.size();
+
+    ptr += 0x30;
+
+    std::memcpy(ptr, sprite.animations.data(), anim_size);
+    ptr += anim_size;
+
+    std::memcpy(ptr, sprite.compositions.data(), comp_size);
+    ptr += comp_size;
+
+    std::memcpy(ptr, sprite.sub_sprites.data(), subs_size);
+    ptr += subs_size;
+
+    std::memcpy(ptr, sprite.layers.data(), layer_size);
+    ptr += layer_size;
 
     return out;
 }
