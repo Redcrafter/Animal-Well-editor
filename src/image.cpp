@@ -1,5 +1,6 @@
 #include "image.hpp"
 
+#include <cstring>
 #include <span>
 #include <stdexcept>
 #include <string>
