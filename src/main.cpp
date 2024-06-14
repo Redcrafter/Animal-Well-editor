@@ -34,8 +34,8 @@
 
 // TODO:
 // reduce global state
-// move windows into separate files
 // add tile names/descriptions
+// option to display hex numbers instead of decimal for data values (i.e. tile coords, tile id, room coords)
 
 GLFWwindow* window;
 
@@ -1405,9 +1405,8 @@ int runViewer() {
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
-    // io.ConfigViewportsNoAutoMerge = true;
-    // io.ConfigViewportsNoTaskBarIcon = true;
+    if(glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) // do not enable viewports for wayland
+        io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // Enable Multi-Viewport / Platform Windows
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
