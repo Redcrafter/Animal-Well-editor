@@ -6,11 +6,11 @@
 
 #include <glad/gl.h>
 #include <glm/glm.hpp>
-#include <stb_image.h>
 
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(resources);
 
+#include "image.hpp"
 #include "windows/errors.hpp"
 
 #define IM_COL32(R, G, B, A) (((uint32_t)(A) << 24) | ((uint32_t)(B) << 16) | ((uint32_t)(G) << 8) | ((uint32_t)(R)))
@@ -86,7 +86,6 @@ struct Texture {
     Texture() {
         glGenTextures(1, &id.value);
     }
-
     /*
     Texture(GLenum target, GLint internalformat, int width, int height, GLenum format, GLenum type, void* pixels) {
         glGenTextures(1, &id.value);
@@ -108,37 +107,28 @@ struct Texture {
         glBindTexture(GL_TEXTURE_2D, id);
     }
 
-    void Load(std::span<const uint8_t> data) {
-        int n;
-        auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
-        if(dat == nullptr) {
-            throw std::runtime_error("missing texture");
-        }
+    void Load(const Image& image) {
+        auto size = image.size();
+        width = size.x;
+        height = size.y;
 
         glBindTexture(GL_TEXTURE_2D, id);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, dat);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        stbi_image_free(dat);
     }
 
     void LoadSubImage(int x, int y, std::span<const uint8_t> data) {
-        int w, h, n;
-        auto* dat = stbi_load_from_memory(data.data(), data.size(), &w, &h, &n, 4);
-        if(dat == nullptr) {
-            throw std::runtime_error("failed to load texture");
-        }
+        LoadSubImage(x, y, Image(data));
+    }
+    void LoadSubImage(int x, int y, const Image& image) {
+        auto size = image.size();
+        assert(x >= 0 && x + size.x <= width && y >= 0 && y + size.y <= height);
 
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, dat);
-
-        stbi_image_free(dat);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
     }
 };
 

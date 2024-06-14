@@ -19,7 +19,6 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <nfd.h>
-#include <stb_image_write.h>
 
 #include "game_data.hpp"
 #include "history.hpp"
@@ -36,6 +35,7 @@
 // reduce global state
 // add tile names/descriptions
 // option to display hex numbers instead of decimal for data values (i.e. tile coords, tile id, room coords)
+// fix some special tile rendering (clock, bat, dog, space bunny, time capsule)
 
 GLFWwindow* window;
 
@@ -263,37 +263,22 @@ static ImVec2 toImVec(const glm::vec2 vec) {
 }
 
 static void LoadAtlas(std::span<const uint8_t> data) {
-    int width, height, n;
-    auto* dat = stbi_load_from_memory(data.data(), data.size(), &width, &height, &n, 4);
-    if(dat == nullptr) {
-        throw std::runtime_error("failed to load texture atlas");
-    }
+    Image tex(data);
+    auto size = tex.size();
 
     if(atlas == nullptr) {
         atlas = std::make_unique<Texture>();
     }
 
     // chroma key cyan and replace with alpha
-    auto vptr = (uint32_t*)dat;
-    for(int i = 0; i < width * height; ++i) {
+    auto vptr = tex.data();
+    for(int i = 0; i < size.x * size.y; ++i) {
         if(vptr[i] == 0xFFFFFF00) {
             vptr[i] = 0;
         }
     }
 
-    atlas->Bind();
-    atlas->width = width;
-    atlas->height = height;
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, dat);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    stbi_image_free(dat);
+    atlas->Load(tex);
 };
 
 static bool load_game(const std::string& path) {
@@ -311,6 +296,8 @@ static bool load_game(const std::string& path) {
 
         bg_tex->Bind();
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 320 * 4, 180 * 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        bg_tex->width = 320 * 4;
+        bg_tex->height = 180 * 4;
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -411,6 +398,46 @@ static void dump_assets() {
         }
     } catch(std::exception& e) {
         error_dialog.push(e.what());
+    }
+}
+
+static void dump_tile_textures() {
+    static std::string lastPath = std::filesystem::current_path().string();
+    std::string path;
+    auto result = NFD::PickFolder(lastPath.c_str(), path, window);
+    if(result != NFD::Result::Okay) {
+        return;
+    }
+    lastPath = path;
+
+    Image time_capsule(game_data.get_asset(277));
+    Image bunny(game_data.get_asset(30));
+    Image atlas(game_data.get_asset(255));
+
+    for(int i = 0; i < game_data.uvs.size(); ++i) {
+        auto uv = game_data.uvs[i];
+        Image* tex;
+
+        if(i == 793) {
+            uv.size = time_capsule.size();
+            tex = &time_capsule;
+        } else if(i == 794) {
+            uv.size = bunny.size();
+            tex = &bunny;
+        } else {
+            if(uv.size.x == 0 || uv.size.y == 0) continue;
+            tex = &atlas;
+        }
+
+        Image img(uv.size);
+
+        for(int y = 0; y < uv.size.y; ++y) {
+            for(int x = 0; x < uv.size.x; ++x) {
+                img(x, y) = (*tex)(uv.pos.x + x, uv.pos.y + y);
+            }
+        }
+
+        img.save_png(path + "/" + std::to_string(i) + ".png");
     }
 }
 
@@ -697,10 +724,10 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
     // overlay->Buffer();
     // overlay->Draw();
 
-    std::vector<uint8_t> img(size.x * size.y * sizeof(uint32_t));
+    Image img(size);
     fb.tex.Bind();
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
-    stbi_write_png(path.c_str(), size.x, size.y, 4, img.data(), size.x * sizeof(uint32_t));
+    img.save_png(path);
 
     // restore viewport
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -782,14 +809,6 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
             map_exporter.draw_options();
             ImGui::EndDisabled();
 
-            ImGui::Separator();
-
-            ImGui::BeginDisabled(!game_data.loaded);
-            if(ImGui::MenuItem("Dump assets")) {
-                dump_assets();
-            }
-            ImGui::EndDisabled();
-
             ImGui::EndMenu();
         }
 
@@ -829,6 +848,13 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
             if(ImGui::MenuItem("Export Full Map Screenshot")) {
                 full_map_screenshot(textured_shader);
             }
+            if(ImGui::MenuItem("Dump assets")) {
+                dump_assets();
+            }
+            if(ImGui::MenuItem("Dump tile textures")) {
+                dump_tile_textures();
+            }
+
             ImGui::EndDisabled();
 
             ImGui::EndMenu();
