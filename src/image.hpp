@@ -36,4 +36,14 @@ class Image {
         assert(x >= 0 && x < width && y >= 0 && y < height);
         return data_[x + y * width];
     }
+
+    bool operator==(const Image& other) const {
+        if(width != other.width || height != other.height) return false;
+        for(int i = 0; i < width * height; ++i) {
+            if(data_[i] != other.data_[i]) return false;
+        }
+        return true;
+    }
 };
+
+Image pack(const std::vector<Image>& images, int width, int height);
