@@ -108,13 +108,12 @@ struct Texture {
     }
 
     void Load(const Image& image) {
-        auto size = image.size();
-        width = size.x;
-        height = size.y;
+        width = image.width();
+        height = image.height();
 
         glBindTexture(GL_TEXTURE_2D, id);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -124,11 +123,11 @@ struct Texture {
         LoadSubImage(x, y, Image(data));
     }
     void LoadSubImage(int x, int y, const Image& image) {
-        auto size = image.size();
-        assert(x >= 0 && x + size.x <= width && y >= 0 && y + size.y <= height);
+        auto [w, h] = image.size();
+        assert(x >= 0 && x + w <= width && y >= 0 && y + h <= height);
 
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
     }
 };
 

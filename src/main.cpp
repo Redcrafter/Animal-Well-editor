@@ -262,25 +262,6 @@ static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
 }
 
-static void LoadAtlas(std::span<const uint8_t> data) {
-    Image tex(data);
-    auto size = tex.size();
-
-    if(atlas == nullptr) {
-        atlas = std::make_unique<Texture>();
-    }
-
-    // chroma key cyan and replace with alpha
-    auto vptr = tex.data();
-    for(int i = 0; i < size.x * size.y; ++i) {
-        if(vptr[i] == 0xFFFFFF00) {
-            vptr[i] = 0;
-        }
-    }
-
-    atlas->Load(tex);
-};
-
 static bool load_game(const std::string& path) {
     if(!std::filesystem::exists(path)) {
         return false;
@@ -288,7 +269,22 @@ static bool load_game(const std::string& path) {
 
     try {
         game_data = GameData::load(path);
-        LoadAtlas(game_data.get_asset(255));
+
+        { // load atlas
+            if(atlas == nullptr) {
+                atlas = std::make_unique<Texture>();
+            }
+
+            auto tex = Image(game_data.get_asset(255));
+            // chroma key cyan and replace with alpha
+            auto vptr = tex.data();
+            for(int i = 0; i < tex.width() * tex.height(); ++i) {
+                if(vptr[i] == 0xFFFFFF00) {
+                    vptr[i] = 0;
+                }
+            }
+            atlas->Load(tex);
+        }
 
         if(bg_tex == nullptr) {
             bg_tex = std::make_unique<Texture>();
@@ -359,38 +355,41 @@ static void dump_assets() {
         for(size_t i = 0; i < game_data.assets.size(); ++i) {
             auto& item = game_data.assets[i];
 
-            std::string ext = ".bin";
-            switch(item.type) {
-                case AssetType::Text:
-                    ext = ".txt";
-                    break;
-                case AssetType::MapData:
-                case AssetType::Encrypted_MapData:
-                    ext = ".map";
-                    break;
-                case AssetType::Png:
-                case AssetType::Encrypted_Png:
-                    ext = ".png";
-                    break;
-                case AssetType::Ogg:
-                case AssetType::Encrypted_Ogg:
-                    ext = ".ogg";
-                    break;
-                case AssetType::SpriteData:
-                    ext = ".sprite";
-                    break;
-                case AssetType::Shader:
-                    ext = ".shader";
-                    break;
-                case AssetType::Font:
-                    ext = ".font";
-                    break;
-                case AssetType::Encrypted_XPS:
-                    ext = ".xps";
-                    break;
-            }
-
             auto dat = game_data.get_asset(i);
+            auto ptr = dat.data();
+            std::string ext = ".bin";
+            if(item.type == AssetType::Text) {
+                ext = ".txt";
+            } else if(ptr[0] == 'O' && ptr[1] == 'g' && ptr[2] == 'g' && ptr[3] == 'S') {
+                assert(item.type == AssetType::Ogg || item.type == AssetType::Encrypted_Ogg);
+                ext = ".ogg";
+            } else if(ptr[0] == 0x89 && ptr[1] == 'P' && ptr[2] == 'N' && ptr[3] == 'G') {
+                assert(item.type == AssetType::Png || item.type == AssetType::Encrypted_Png);
+                ext = ".png";
+            } else if(ptr[0] == 0xFE && ptr[1] == 0xCA && ptr[2] == 0x0D && ptr[3] == 0xF0) {
+                assert(item.type == AssetType::MapData || item.type == AssetType::Encrypted_MapData);
+                ext = ".map";
+            } else if(ptr[0] == 'D' && ptr[1] == 'X' && ptr[2] == 'B' && ptr[3] == 'C') {
+                assert(item.type == AssetType::Shader);
+                ext = ".shader";
+            } else if(ptr[0] == 0 && ptr[1] == 0x0B && ptr[2] == 0xB0 && ptr[3] == 0) {
+                assert(item.type == AssetType::MapData || item.type == AssetType::Encrypted_MapData);
+                ext = ".uvs";
+            } else if(ptr[0] == 'P' && ptr[1] == 'K' && ptr[2] == 3 && ptr[3] == 4) {
+                assert(item.type == AssetType::Encrypted_XPS);
+                ext = ".xps";
+            } else if(ptr[0] == 0x00 && ptr[1] == 0x0B && ptr[2] == 0xF0 && ptr[3] == 0x00) {
+                assert(item.type == AssetType::MapData || item.type == AssetType::Encrypted_MapData);
+                ext = ".ambient";
+            } else if(ptr[0] == 0x1D && ptr[1] == 0xAC) { // ptr[2] = version 1,2,3
+                assert(item.type == AssetType::SpriteData);
+                ext = ".sprite";
+            } else if(ptr[0] == 'B' && ptr[1] == 'M' && ptr[2] == 'F') {
+                assert(item.type == AssetType::Font);
+                ext = ".font";
+            } else {
+                assert(false);
+            }
 
             std::ofstream file(path + "/" + std::to_string(i) + ext, std::ios::binary);
             file.write((char*)dat.data(), dat.size());
@@ -399,6 +398,98 @@ static void dump_assets() {
     } catch(std::exception& e) {
         error_dialog.push(e.what());
     }
+}
+
+static auto calc_tile_size(int i) {
+    auto uv = game_data.uvs[i];
+    auto size = uv.size;
+
+    switch(i) {
+        case 793: // time capsule
+            size = {64, 32};
+            break;
+        case 794: // big bunny
+            size = {256, 256};
+            break;
+
+        case 610: case 615: case 616: // doors
+            size.x += 3;
+            break;
+        case 150: // sign
+        case 151: // snail
+        case 6: case 7: case 8: case 9: // small indicator blocks
+        case 38: case 46: case 202: case 548: case 554: case 561: case 624: case 731: // lamps
+        case 348:
+        case 85:
+        case 118: case 694: // buttons
+        case 167:
+            size.x *= 2;
+            break;
+        case 411: case 412: case 413: case 414: // big flames
+        case 628: case 629: case 630: case 631: // small flames
+        case 42:
+        case 125: // candle
+        case 426:
+            size.x *= 3;
+            break;
+        case 224: // heart
+        case 226:
+        case 164:
+        case 128:
+            size.x *= 4;
+            break;
+        case 129:
+        case 138: // bear
+        case 225:
+        case 241: // panda
+        case 370:
+        case 468: // maybe 5? idk
+        case 217:
+            size.x *= 6;
+            break;
+        case 245:
+            size.x *= 7;
+            break;
+        case 278:
+        case 351:
+        case 343:
+        case 783:
+        case 218:
+            size.x *= 8;
+            break;
+        case 244:
+        case 216:
+            size.x *= 10;
+            break;
+        case 282: // water drop
+            size.x *= 13;
+            break;
+
+        case 89: case 160: case 277: case 346: case 354: // pipes
+            size.y *= 4;
+            break;
+
+        case 315: // egg atlas
+            size *= 8;
+            break;
+
+        case 775: // 65th egg uv. only has uv
+            break;
+
+        default:
+            if(!game_data.sprites.contains(i)) { // not a sprite
+                if(uv.contiguous || uv.self_contiguous) {
+                    size.x *= 4;
+                    size.y *= 4;
+                }
+                if(uv.has_normals) {
+                    size.y *= 2;
+                }
+            }
+            break;
+    }
+
+    return size;
 }
 
 static void dump_tile_textures() {
@@ -418,26 +509,18 @@ static void dump_tile_textures() {
         auto uv = game_data.uvs[i];
         Image* tex;
 
+        auto size = calc_tile_size(i);
+
         if(i == 793) {
-            uv.size = time_capsule.size();
             tex = &time_capsule;
         } else if(i == 794) {
-            uv.size = bunny.size();
             tex = &bunny;
         } else {
             if(uv.size.x == 0 || uv.size.y == 0) continue;
             tex = &atlas;
         }
 
-        Image img(uv.size);
-
-        for(int y = 0; y < uv.size.y; ++y) {
-            for(int x = 0; x < uv.size.x; ++x) {
-                img(x, y) = (*tex)(uv.pos.x + x, uv.pos.y + y);
-            }
-        }
-
-        img.save_png(path + "/" + std::to_string(i) + ".png");
+        tex->slice(uv.pos.x, uv.pos.y, size.x, size.y).save_png(path + "/" + std::to_string(i) + ".png");
     }
 }
 
@@ -724,7 +807,7 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
     // overlay->Buffer();
     // overlay->Draw();
 
-    Image img(size);
+    Image img(size.x, size.y);
     fb.tex.Bind();
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
     img.save_png(path);
