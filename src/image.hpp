@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <cstdint>
 
 class Image {
     uint32_t* data_ = nullptr;
