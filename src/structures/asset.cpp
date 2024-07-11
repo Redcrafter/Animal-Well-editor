@@ -1,6 +1,7 @@
 #include "asset.hpp"
 
 #include <array>
+#include <filesystem>
 #include <fstream>
 
 #include "../aes.hpp"
@@ -12,7 +13,11 @@ static std::array<uint8_t, 16> keys[3] = {
 };
 
 std::vector<char> readFile(const char* path) {
+    if(!std::filesystem::exists(path))
+        throw std::runtime_error("File not found");
+
     std::ifstream testFile(path, std::ios::binary);
+    testFile.exceptions(std::ifstream::badbit | std::ifstream::failbit);
     return std::vector(std::istreambuf_iterator(testFile), std::istreambuf_iterator<char>());
 }
 

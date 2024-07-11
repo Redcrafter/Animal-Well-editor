@@ -262,6 +262,59 @@ static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
 }
 
+static void load_data() {
+    { // load atlas
+        if(atlas == nullptr) {
+            atlas = std::make_unique<Texture>();
+        }
+
+        auto tex = Image(game_data.get_asset(255));
+        // chroma key cyan and replace with alpha
+        auto vptr = tex.data();
+        for(int i = 0; i < tex.width() * tex.height(); ++i) {
+            if(vptr[i] == 0xFFFFFF00) {
+                vptr[i] = 0;
+            }
+        }
+        atlas->Load(tex);
+    }
+
+    if(bg_tex == nullptr) {
+        bg_tex = std::make_unique<Texture>();
+    }
+
+    bg_tex->Bind();
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 320 * 4, 180 * 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    bg_tex->width = 320 * 4;
+    bg_tex->height = 180 * 4;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    bg_tex->LoadSubImage(320 * 0, 180 * 0, game_data.get_asset(11)); // 13
+    bg_tex->LoadSubImage(320 * 1, 180 * 0, game_data.get_asset(12)); // 14
+    bg_tex->LoadSubImage(320 * 2, 180 * 0, game_data.get_asset(13)); // 7, 8
+    bg_tex->LoadSubImage(320 * 3, 180 * 0, game_data.get_asset(14)); // 1
+
+    bg_tex->LoadSubImage(320 * 0, 180 * 1, game_data.get_asset(15)); // 6
+    bg_tex->LoadSubImage(320 * 1, 180 * 1, game_data.get_asset(16)); // 9, 11
+    bg_tex->LoadSubImage(320 * 2, 180 * 1, game_data.get_asset(17)); // 10
+    bg_tex->LoadSubImage(320 * 3, 180 * 1, game_data.get_asset(18)); // 16
+
+    bg_tex->LoadSubImage(320 * 0, 180 * 2, game_data.get_asset(19)); // 4, 5
+    bg_tex->LoadSubImage(320 * 1, 180 * 2, game_data.get_asset(20)); // 15
+    bg_tex->LoadSubImage(320 * 2, 180 * 2, game_data.get_asset(21)); // 19
+    bg_tex->LoadSubImage(320 * 3, 180 * 2, game_data.get_asset(22)); // 2, 3
+
+    bg_tex->LoadSubImage(320 * 0, 180 * 3, game_data.get_asset(23)); // 17
+    bg_tex->LoadSubImage(320 * 1, 180 * 3, game_data.get_asset(24)); // 18
+    bg_tex->LoadSubImage(320 * 2, 180 * 3, game_data.get_asset(26)); // 12
+
+    undo_buffer.clear();
+    redo_buffer.clear();
+    updateRender();
+}
+
 static bool load_game(const std::string& path) {
     if(!std::filesystem::exists(path)) {
         return false;
@@ -269,57 +322,7 @@ static bool load_game(const std::string& path) {
 
     try {
         game_data = GameData::load(path);
-
-        { // load atlas
-            if(atlas == nullptr) {
-                atlas = std::make_unique<Texture>();
-            }
-
-            auto tex = Image(game_data.get_asset(255));
-            // chroma key cyan and replace with alpha
-            auto vptr = tex.data();
-            for(int i = 0; i < tex.width() * tex.height(); ++i) {
-                if(vptr[i] == 0xFFFFFF00) {
-                    vptr[i] = 0;
-                }
-            }
-            atlas->Load(tex);
-        }
-
-        if(bg_tex == nullptr) {
-            bg_tex = std::make_unique<Texture>();
-        }
-
-        bg_tex->Bind();
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 320 * 4, 180 * 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        bg_tex->width = 320 * 4;
-        bg_tex->height = 180 * 4;
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-        bg_tex->LoadSubImage(320 * 0, 180 * 0, game_data.get_asset(11)); // 13
-        bg_tex->LoadSubImage(320 * 1, 180 * 0, game_data.get_asset(12)); // 14
-        bg_tex->LoadSubImage(320 * 2, 180 * 0, game_data.get_asset(13)); // 7, 8
-        bg_tex->LoadSubImage(320 * 3, 180 * 0, game_data.get_asset(14)); // 1
-
-        bg_tex->LoadSubImage(320 * 0, 180 * 1, game_data.get_asset(15)); // 6
-        bg_tex->LoadSubImage(320 * 1, 180 * 1, game_data.get_asset(16)); // 9, 11
-        bg_tex->LoadSubImage(320 * 2, 180 * 1, game_data.get_asset(17)); // 10
-        bg_tex->LoadSubImage(320 * 3, 180 * 1, game_data.get_asset(18)); // 16
-
-        bg_tex->LoadSubImage(320 * 0, 180 * 2, game_data.get_asset(19)); // 4, 5
-        bg_tex->LoadSubImage(320 * 1, 180 * 2, game_data.get_asset(20)); // 15
-        bg_tex->LoadSubImage(320 * 2, 180 * 2, game_data.get_asset(21)); // 19
-        bg_tex->LoadSubImage(320 * 3, 180 * 2, game_data.get_asset(22)); // 2, 3
-
-        bg_tex->LoadSubImage(320 * 0, 180 * 3, game_data.get_asset(23)); // 17
-        bg_tex->LoadSubImage(320 * 1, 180 * 3, game_data.get_asset(24)); // 18
-        bg_tex->LoadSubImage(320 * 2, 180 * 3, game_data.get_asset(26)); // 12
-
-        undo_buffer.clear();
-        redo_buffer.clear();
-        updateRender();
+        load_data();
         return true;
     } catch(std::exception& e) {
         error_dialog.push(e.what());
@@ -753,6 +756,63 @@ class {
     }
 } map_exporter;
 
+class {
+    bool should_open = false;
+    int selected_asset = 0;
+    std::string file_path;
+
+  public:
+    void draw_popup() {
+        if(should_open) {
+            ImGui::OpenPopup("Replace asset");
+            should_open = false;
+        }
+
+        if(ImGui::BeginPopupModal("Replace asset")) {
+            ImGui::InputInt("asset id", &selected_asset);
+            selected_asset = std::clamp(selected_asset, 0, (int)game_data.assets.size() - 1);
+
+            ImGui::InputText("path", &file_path);
+            ImGui::SameLine();
+
+            if(ImGui::Button("Search")) {
+                std::string path;
+                auto result = NFD::OpenDialog({}, nullptr, path, window);
+
+                if(result == NFD::Result::Error) {
+                    error_dialog.push(NFD::GetError());
+                }
+                if(result == NFD::Result::Okay) {
+                    file_path = path;
+                }
+            }
+
+            if(ImGui::Button("Replace")) {
+                try {
+                    auto data = readFile(file_path.c_str());
+                    game_data.replace_asset(std::span((uint8_t*)data.data(), data.size()), selected_asset);
+
+                    ImGui::CloseCurrentPopup();
+                } catch(std::exception& e) {
+                    error_dialog.push(e.what());
+                }
+
+                load_data();
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void open() {
+        should_open = true;
+    }
+} replacer;
+
 void full_map_screenshot(ShaderProgram& textured_shader) {
     static std::string export_path = std::filesystem::current_path().string() + "/map.png";
     std::string path;
@@ -938,6 +998,9 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
             }
             if(ImGui::MenuItem("Dump tile textures")) {
                 dump_tile_textures();
+            }
+            if(ImGui::MenuItem("Replace asset")) {
+                replacer.open();
             }
 
             ImGui::EndDisabled();
@@ -1582,6 +1645,7 @@ int runViewer() {
         DockSpaceOverViewport(textured_shader);
         error_dialog.draw();
         exe_exporter.draw_popup();
+        replacer.draw_popup();
 
         // skip rendering if no data is loaded
         if(game_data.loaded) {
