@@ -57,11 +57,17 @@ void GameData::apply_changes() {
     replace_asset(save_uvs(uvs), 254);
 }
 
-void GameData::patch_renderdoc() {
-    constexpr char pattern[] = "renderdoc.dll";
+void GameData::patch_renderdoc(bool patch) {
+    constexpr char pattern[] = "enderdoc.dll";
     auto res = std::search(raw.begin(), raw.end(), std::begin(pattern), std::end(pattern));
-    if(res != raw.end()) {
+    if(res == raw.end()) return;
+
+    --res;
+    if(patch && *res != 'l') {
         *res = 'l'; // replace first letter with 'l'
+    }
+    if(!patch && *res != 'r') {
+        *res = 'r'; // undo patch
     }
 }
 
@@ -73,7 +79,7 @@ void GameData::patch_save_path(const std::string& save_name) {
         std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
         auto wstr = converter.from_bytes(save_name);
 
-        for(int i = 0; i < wstr.size() + 1; ++i) {
+        for(size_t i = 0; i < wstr.size() + 1; ++i) {
             auto c = wstr[i];
             *res = c & 0xFF;
             ++res;

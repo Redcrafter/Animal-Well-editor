@@ -37,7 +37,7 @@ class GameData {
     std::span<uint8_t> get_asset(int id);
 
     void apply_changes();
-    void patch_renderdoc();
+    void patch_renderdoc(bool patch);
     void patch_save_path(const std::string& save_name);
     void replace_asset(std::span<const uint8_t> data, int id);
 };

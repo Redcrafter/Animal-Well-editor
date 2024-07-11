@@ -352,6 +352,8 @@ static void dump_assets() {
     try {
         std::filesystem::create_directories(path);
 
+        game_data.apply_changes();
+
         for(size_t i = 0; i < game_data.assets.size(); ++i) {
             auto& item = game_data.assets[i];
 
@@ -505,7 +507,7 @@ static void dump_tile_textures() {
     Image bunny(game_data.get_asset(30));
     Image atlas(game_data.get_asset(255));
 
-    for(int i = 0; i < game_data.uvs.size(); ++i) {
+    for(size_t i = 0; i < game_data.uvs.size(); ++i) {
         auto uv = game_data.uvs[i];
         Image* tex;
 
@@ -675,12 +677,12 @@ class {
   private:
     void export_exe() {
         try {
+            game_data.apply_changes();
+
+            // copying invalidates asset span
             auto out = game_data; // make copy for exporting
-            out.apply_changes();
 
-            if(patch_renderdoc)
-                out.patch_renderdoc();
-
+            out.patch_renderdoc(patch_renderdoc);
             out.patch_save_path(save_name);
             out.save(export_path);
         } catch(std::exception& e) {
@@ -739,6 +741,7 @@ class {
     void export_map() {
         try {
             auto data = game_data.maps[selectedMap].save();
+
             std::ofstream file(export_path, std::ios::binary);
             file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
             file.write((char*)data.data(), data.size());
@@ -765,7 +768,6 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
     export_path = path;
 
     auto& map = game_data.maps[selectedMap];
-    auto room_size = glm::ivec2(40, 22);
     auto size = glm::ivec2(map.size.x, map.size.y) * room_size * 8;
 
     glViewport(0, 0, size.x, size.y);
