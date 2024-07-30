@@ -1180,6 +1180,17 @@ static void handle_input() {
     }
 }
 
+void ColorEdit4(const char* label, glm::u8vec4& col, ImGuiColorEditFlags flags = 0) {
+    float col4[4] {col.x / 255.0f, col.y / 255.0f, col.z / 255.0f, col.w / 255.0f};
+
+    ImGui::ColorEdit4(label, col4, flags);
+
+    col.x = col4[0] * 255.f;
+    col.y = col4[1] * 255.f;
+    col.z = col4[2] * 255.f;
+    col.w = col4[3] * 255.f;
+}
+
 static void DrawPreviewWindow() {
     ImGui::Begin("Properties");
     auto& io = ImGui::GetIO();
@@ -1212,12 +1223,13 @@ static void DrawPreviewWindow() {
             ImGui::SeparatorText("Room Data");
             ImGui::Text("position %i %i", room->x, room->y);
             ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
-            uint8_t bg_min = 0, bg_max = 18;
+            const uint8_t bg_min = 0, bg_max = 18;
             if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
                 renderBgs(game_data.maps[selectedMap], *bg_text);
             }
 
-            ImGui::InputScalar("pallet_index", ImGuiDataType_U8, &room->pallet_index);
+            const uint8_t pallet_max = game_data.ambient.size() - 1;
+            ImGui::SliderScalar("Lighting index", ImGuiDataType_U8, &room->lighting_index, &bg_min, &pallet_max);
             ImGui::InputScalar("idk1", ImGuiDataType_U8, &room->idk1);
             ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
             ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
@@ -1233,6 +1245,27 @@ static void DrawPreviewWindow() {
                     tile_layer = 2;
                 }
             }
+
+            ImGui::SeparatorText("Lighting Data");
+
+            LightingData amb {};
+            if(room->lighting_index < game_data.ambient.size())
+                amb = game_data.ambient[room->lighting_index];
+
+            ImGui::BeginDisabled(room->lighting_index >= game_data.ambient.size());
+
+            ColorEdit4("ambient light", amb.ambient_light); ImGui::SameLine(); HelpMarker("Alpha channel is unused");
+            ColorEdit4("fg ambient multi", amb.fg_ambient_multi); ImGui::SameLine(); HelpMarker("Alpha channel is unused");
+            ColorEdit4("bg ambient multi", amb.bg_ambient_multi); ImGui::SameLine(); HelpMarker("Alpha channel is unused");
+
+            ColorEdit4("lamp intensity", amb.light_intensity);
+            ImGui::DragFloat3("color dividers", &amb.dividers.x);
+            ImGui::DragFloat("color saturation", &amb.saturation);
+            ImGui::DragFloat("bg texture light multi", &amb.bg_tex_light_multi);
+            ImGui::EndDisabled();
+
+            if(room->lighting_index < game_data.ambient.size())
+                game_data.ambient[room->lighting_index] = amb;
 
             ImGui::SeparatorText("Room Tile Data");
             ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background"

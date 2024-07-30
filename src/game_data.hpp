@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "structures/ambient.hpp"
 #include "structures/asset.hpp"
 #include "structures/map.hpp"
 #include "structures/sprite.hpp"
@@ -28,6 +29,7 @@ class GameData {
     std::array<Map, 5> maps {};
     std::unordered_map<uint32_t, SpriteData> sprites;
     std::vector<uv_data> uvs;
+    std::vector<LightingData> ambient;
 
     bool loaded = false;
 

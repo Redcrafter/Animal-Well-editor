@@ -46,7 +46,7 @@ struct Room {
     uint8_t bgId;
     uint8_t waterLevel;
 
-    uint8_t pallet_index;
+    uint8_t lighting_index;
     uint8_t idk1;
     uint8_t idk2;
     uint8_t idk3;

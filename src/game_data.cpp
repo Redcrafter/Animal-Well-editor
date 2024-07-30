@@ -22,6 +22,8 @@ GameData GameData::load(const std::string& path) {
     }
 
     data.uvs = parse_uvs(data.get_asset(254));
+    data.ambient = LightingData::parse(data.get_asset(179));
+
     data.loaded = true;
 
     // auto test = data;
@@ -55,6 +57,7 @@ void GameData::apply_changes() {
         replace_asset(save_sprite(sprites[tile_id]), asset_id);
     }
     replace_asset(save_uvs(uvs), 254);
+    replace_asset(LightingData::save(ambient), 179);
 }
 
 void GameData::patch_renderdoc(bool patch) {
