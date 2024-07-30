@@ -3,12 +3,23 @@
 #include <cstring>
 #include <stdexcept>
 
-#pragma warning disable
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+
+#pragma warning(push)
+#pragma warning(disable : 4996)
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#pragma warning restore
+
+#pragma warning(pop)
+#pragma gcc diagnostic pop
+#pragma clang diagnostic pop
 
 Image::Image(std::span<const uint8_t> data) {
     data_ = (uint32_t*)stbi_load_from_memory(data.data(), data.size(), &width_, &height_, nullptr, 4);
@@ -29,22 +40,10 @@ Image::Image(int width, int height) : width_(width), height_(height) {
     std::memset(data_, 0, width * height * 4);
 }
 
-Image::Image(const Image& other) {
-    width_ = other.width_;
-    height_ = other.height_;
-    data_ = (uint32_t*)malloc(width_ * height_ * 4);
-    std::memcpy(data_, other.data_, width_ * height_ * 4);
-}
-
-Image& Image::operator=(const Image& other) {
-    if(this != &other) {
-        free(data_);
-        width_ = other.width_;
-        height_ = other.height_;
-        data_ = (uint32_t*)malloc(width_ * height_ * 4);
-        std::memcpy(data_, other.data_, width_ * height_ * 4);
-    }
-    return *this;
+Image Image::copy() const {
+    Image res(width_, height_);
+    std::memcpy(res.data_, data_, width_ * height_ * 4);
+    return res;
 }
 
 Image::Image(Image&& other) noexcept {
@@ -55,6 +54,23 @@ Image::Image(Image&& other) noexcept {
     other.data_ = nullptr;
     other.width_ = 0;
     other.height_ = 0;
+}
+
+Image& Image::operator=(Image&& other) noexcept {
+    if(&other == this)
+        return *this;
+
+    free(data_);
+
+    data_ = other.data_;
+    width_ = other.width_;
+    height_ = other.height_;
+
+    other.data_ = nullptr;
+    other.width_ = 0;
+    other.height_ = 0;
+
+    return *this;
 }
 
 Image::~Image() {
@@ -93,4 +109,22 @@ void Image::fill(int x, int y, int width, int height, uint32_t color) {
             (*this)(x + x1, y + y1) = color;
         }
     }
+}
+
+Image Image::scale(int xScale, int yScale) const {
+    Image result(width_ * xScale, height_ * yScale);
+
+    for(int y = 0; y < height_; ++y) {
+        for(int x = 0; x < width_; ++x) {
+            const auto pix = (*this)(x, y);
+
+            for(int y1 = 0; y1 < yScale; ++y1) {
+                for(int x1 = 0; x1 < xScale; ++x1) {
+                    result(x * xScale + x1, y * yScale + y1) = pix;
+                }
+            }
+        }
+    }
+
+    return result;
 }

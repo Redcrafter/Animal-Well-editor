@@ -1,10 +1,10 @@
 #pragma once
 
 #include <cassert>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <utility>
-#include <cstdint>
 
 class Image {
     uint32_t* data_ = nullptr;
@@ -16,9 +16,11 @@ class Image {
     Image(const std::string& path);
     Image(int width, int height);
 
+    Image(const Image& other) = delete;
+    Image& operator=(const Image& other) = delete;
+
     Image(Image&& other) noexcept;
-    Image(const Image& other);
-    Image& operator=(const Image& other);
+    Image& operator=(Image&& other) noexcept;
 
     ~Image();
 
@@ -26,8 +28,11 @@ class Image {
 
     // copy this image to another image
     void copy_to(Image& other, int x, int y) const;
+    Image copy() const;
+
     Image slice(int x, int y, int width, int height) const;
     void fill(int x, int y, int width, int height, uint32_t color);
+    Image scale(int xScale, int yScale) const;
 
     int width() const { return width_; }
     int height() const { return height_; }
@@ -43,20 +48,6 @@ class Image {
     uint32_t& operator()(int x, int y) {
         assert(x >= 0 && x < width_ && y >= 0 && y < height_);
         return data_[x + y * width_];
-    }
-
-    Image& operator=(Image&& other) noexcept {
-        free(data_);
-
-        data_ = other.data_;
-        width_ = other.width_;
-        height_ = other.height_;
-
-        other.data_ = nullptr;
-        other.width_ = 0;
-        other.height_ = 0;
-
-        return *this;
     }
 
     bool operator==(const Image& other) const {

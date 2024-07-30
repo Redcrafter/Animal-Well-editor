@@ -7,9 +7,9 @@
 #include <glm/glm.hpp>
 
 struct SpriteAnimation {
-    uint16_t start;       // First composition in the animation
-    uint16_t end;         // Last composition in the animation
-    uint16_t frame_delay; // After waiting this many frames, increment the composition number
+    uint16_t start; // First composition in the animation
+    uint16_t end;   // Last composition in the animation
+    uint16_t type;  // 0 = forward, 1 = backwards, 2 = alternating
 };
 static_assert(sizeof(SpriteAnimation) == 6);
 
@@ -45,6 +45,83 @@ struct SpriteData {
     std::vector<uint8_t> compositions; // are frames
     std::vector<SubSprite> sub_sprites;
     std::vector<SpriteLayer> layers;
+
+    SpriteData() = default;
+    explicit SpriteData(std::span<const uint8_t> data) {
+        if(data.size() < 0x30) {
+            throw std::runtime_error("invalid sprite header size");
+        }
+        auto ptr = (char*)data.data();
+
+        auto magic = *(uint32_t*)ptr;
+        if(magic != 0x0003AC1D) {
+            throw std::runtime_error("invalid sprite header");
+        }
+
+        size.x = *(uint16_t*)(ptr + 4);
+        size.y = *(uint16_t*)(ptr + 6);
+        auto layer_count = *(uint16_t*)(ptr + 8);
+        composition_count = *(uint16_t*)(ptr + 10);
+        auto subsprite_count = *(uint8_t*)(ptr + 12);
+        auto animation_count = *(uint8_t*)(ptr + 13);
+
+        auto anim_size = animation_count * sizeof(SpriteAnimation);
+        auto comp_size = layer_count * composition_count;
+        auto subs_size = subsprite_count * sizeof(SubSprite);
+        auto layer_size = layer_count * sizeof(SpriteLayer);
+
+        if(data.size() < 0x30 + anim_size + comp_size + subs_size + layer_size) {
+            throw std::runtime_error("invalid sprite data size");
+        }
+
+        ptr += 0x30;
+
+        animations = {(SpriteAnimation*)ptr, (SpriteAnimation*)(ptr + anim_size)};
+        ptr += anim_size;
+
+        compositions = {ptr, ptr + comp_size};
+        ptr += comp_size;
+
+        sub_sprites = {(SubSprite*)ptr, (SubSprite*)(ptr + subs_size)};
+        ptr += subs_size;
+
+        layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr + layer_size)};
+    }
+
+    std::vector<uint8_t> save() const {
+        auto anim_size = animations.size() * sizeof(SpriteAnimation);
+        auto comp_size = compositions.size();
+        auto subs_size = sub_sprites.size() * sizeof(SubSprite);
+        auto layer_size = layers.size() * sizeof(SpriteLayer);
+
+        std::vector<uint8_t> out(0x30 + anim_size + comp_size + subs_size + layer_size);
+
+        auto ptr = out.data();
+        // magic
+        *(int*)ptr = 0x0003AC1D;
+        *(uint16_t*)(ptr + 4) = size.x;
+        *(uint16_t*)(ptr + 6) = size.y;
+        *(uint16_t*)(ptr + 8) = layers.size();
+        *(uint16_t*)(ptr + 10) = composition_count;
+        *(uint8_t*)(ptr + 12) = sub_sprites.size();
+        *(uint8_t*)(ptr + 13) = animations.size();
+
+        ptr += 0x30;
+
+        std::memcpy(ptr, animations.data(), anim_size);
+        ptr += anim_size;
+
+        std::memcpy(ptr, compositions.data(), comp_size);
+        ptr += comp_size;
+
+        std::memcpy(ptr, sub_sprites.data(), subs_size);
+        ptr += subs_size;
+
+        std::memcpy(ptr, layers.data(), layer_size);
+        ptr += layer_size;
+
+        return out;
+    }
 };
 
 struct TileMapping {
@@ -214,82 +291,3 @@ constexpr TileMapping spriteMapping[] = {
     {0x9c, 0xd9, 0x334},
     {0x9d, 0xaf, 0x33e},
 };
-
-inline SpriteData parse_sprite(std::span<const uint8_t> data) {
-    if(data.size() < 0x30) {
-        throw std::runtime_error("invalid sprite header size");
-    }
-    auto ptr = (char*)data.data();
-
-    auto magic = *(uint32_t*)ptr;
-    if(magic != 0x0003AC1D) {
-        throw std::runtime_error("invalid sprite header");
-    }
-
-    SpriteData out;
-    out.size.x = *(uint16_t*)(ptr + 4);
-    out.size.y = *(uint16_t*)(ptr + 6);
-    auto layer_count = *(uint16_t*)(ptr + 8);
-    out.composition_count = *(uint16_t*)(ptr + 10);
-    auto subsprite_count = *(uint8_t*)(ptr + 12);
-    auto animation_count = *(uint8_t*)(ptr + 13);
-
-    auto anim_size = animation_count * sizeof(SpriteAnimation);
-    auto comp_size = layer_count * out.composition_count;
-    auto subs_size = subsprite_count * sizeof(SubSprite);
-    auto layer_size = layer_count * sizeof(SpriteLayer);
-
-    if(data.size() < 0x30 + anim_size + comp_size + subs_size + layer_size) {
-        throw std::runtime_error("invalid sprite data size");
-    }
-
-    ptr += 0x30;
-
-    out.animations = {(SpriteAnimation*)ptr, (SpriteAnimation*)(ptr + anim_size)};
-    ptr += anim_size;
-
-    out.compositions = {ptr, ptr + comp_size};
-    ptr += comp_size;
-
-    out.sub_sprites = {(SubSprite*)ptr, (SubSprite*)(ptr + subs_size)};
-    ptr += subs_size;
-
-    out.layers = {(SpriteLayer*)ptr, (SpriteLayer*)(ptr + layer_size)};
-
-    return out;
-}
-
-inline std::vector<uint8_t> save_sprite(const SpriteData& sprite) {
-    auto anim_size = sprite.animations.size() * sizeof(SpriteAnimation);
-    auto comp_size = sprite.compositions.size();
-    auto subs_size = sprite.sub_sprites.size() * sizeof(SubSprite);
-    auto layer_size = sprite.layers.size() * sizeof(SpriteLayer);
-
-    std::vector<uint8_t> out(0x30 + anim_size + comp_size + subs_size + layer_size);
-
-    auto ptr = out.data();
-    // magic
-    *(int*)ptr = 0x0003AC1D;
-    *(uint16_t*)(ptr + 4) = sprite.size.x;
-    *(uint16_t*)(ptr + 6) = sprite.size.y;
-    *(uint16_t*)(ptr + 8) = sprite.layers.size();
-    *(uint16_t*)(ptr + 10) = sprite.composition_count;
-    *(uint8_t*)(ptr + 12) = sprite.sub_sprites.size();
-    *(uint8_t*)(ptr + 13) = sprite.animations.size();
-
-    ptr += 0x30;
-
-    std::memcpy(ptr, sprite.animations.data(), anim_size);
-    ptr += anim_size;
-
-    std::memcpy(ptr, sprite.compositions.data(), comp_size);
-    ptr += comp_size;
-
-    std::memcpy(ptr, sprite.sub_sprites.data(), subs_size);
-    ptr += subs_size;
-
-    std::memcpy(ptr, sprite.layers.data(), layer_size);
-    ptr += layer_size;
-
-    return out;
-}

@@ -18,10 +18,10 @@ GameData GameData::load(const std::string& path) {
     }
 
     for(const auto [_, asset_id, tile_id] : spriteMapping) {
-        data.sprites[tile_id] = parse_sprite(data.get_asset(asset_id));
+        data.sprites[tile_id] = SpriteData(data.get_asset(asset_id));
     }
 
-    data.uvs = parse_uvs(data.get_asset(254));
+    data.uvs = uv_data::parse(data.get_asset(254));
     data.ambient = LightingData::parse(data.get_asset(179));
 
     data.loaded = true;
@@ -54,9 +54,9 @@ void GameData::apply_changes() {
         replace_asset(maps[i].save(), mapIds[i]);
     }
     for(const auto [_, asset_id, tile_id] : spriteMapping) {
-        replace_asset(save_sprite(sprites[tile_id]), asset_id);
+        replace_asset(sprites[tile_id].save(), asset_id);
     }
-    replace_asset(save_uvs(uvs), 254);
+    replace_asset(uv_data::save(uvs), 254);
     replace_asset(LightingData::save(ambient), 179);
 }
 

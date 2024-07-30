@@ -106,11 +106,19 @@ class Map {
         size = {width, height};
     }
 
-    Room* getRoom(int x, int y) {
-        if(x < 0 || x >= 256 || y < 0 || y >= 256)
+    const Room* getRoom(glm::ivec2 pos) const {
+        if(pos.x < 0 || pos.x >= 256 || pos.y < 0 || pos.y >= 256)
             return nullptr;
-        if(coordinate_map.contains(x | (y << 8))) {
-            return &rooms[coordinate_map.at(x | (y << 8))];
+        if(coordinate_map.contains(pos.x | (pos.y << 8))) {
+            return &rooms[coordinate_map.at(pos.x | (pos.y << 8))];
+        }
+        return nullptr;
+    }
+    Room* getRoom(glm::ivec2 pos) {
+        if(pos.x < 0 || pos.x >= 256 || pos.y < 0 || pos.y >= 256)
+            return nullptr;
+        if(coordinate_map.contains(pos.x | (pos.y << 8))) {
+            return &rooms[coordinate_map.at(pos.x | (pos.y << 8))];
         }
         return nullptr;
     }

@@ -688,6 +688,8 @@ class {
             out.patch_renderdoc(patch_renderdoc);
             out.patch_save_path(save_name);
             out.save(export_path);
+
+            has_exported = true;
         } catch(std::exception& e) {
             error_dialog.push(e.what());
         }
@@ -1150,12 +1152,8 @@ static void handle_input() {
             updateRender();
         }
 
-        if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_Z)) {
-            undo();
-        }
-        if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_Y)) {
-            redo();
-        }
+        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
+        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Y)) redo();
 
         if(holding && selection_handler.contains(lastWorldPos)) {
             // holding & inside rect
@@ -1215,7 +1213,7 @@ static void DrawPreviewWindow() {
         }
 
         auto room_pos = tile_location / room_size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+        auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         ImGui::Text("world pos %i %i", tile_location.x, tile_location.y);
 
@@ -1254,9 +1252,17 @@ static void DrawPreviewWindow() {
 
             ImGui::BeginDisabled(room->lighting_index >= game_data.ambient.size());
 
-            ColorEdit4("ambient light", amb.ambient_light); ImGui::SameLine(); HelpMarker("Alpha channel is unused");
-            ColorEdit4("fg ambient multi", amb.fg_ambient_multi); ImGui::SameLine(); HelpMarker("Alpha channel is unused");
-            ColorEdit4("bg ambient multi", amb.bg_ambient_multi); ImGui::SameLine(); HelpMarker("Alpha channel is unused");
+            ColorEdit4("ambient light", amb.ambient_light);
+            ImGui::SameLine();
+            HelpMarker("Alpha channel is unused");
+
+            ColorEdit4("fg ambient multi", amb.fg_ambient_multi);
+            ImGui::SameLine();
+            HelpMarker("Alpha channel is unused");
+
+            ColorEdit4("bg ambient multi", amb.bg_ambient_multi);
+            ImGui::SameLine();
+            HelpMarker("Alpha channel is unused");
 
             ColorEdit4("lamp intensity", amb.light_intensity);
             ImGui::DragFloat3("color dividers", &amb.dividers.x);
@@ -1336,7 +1342,7 @@ ctrl + y to redo.");
         ImGui::Text("world pos %i %i", mouse_world_pos.x, mouse_world_pos.y);
 
         auto room_pos = mouse_world_pos / room_size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+        auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(!io.WantCaptureMouse && room != nullptr) {
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE)) {
@@ -1441,7 +1447,7 @@ static void draw_overlay() {
         }
 
         auto room_pos = tile_location / room_size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+        auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(room != nullptr) {
             auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
@@ -1497,7 +1503,7 @@ static void draw_overlay() {
     } else if(mouse_mode == 1) {
         auto mouse_world_pos = screen_to_world(mousePos);
         auto room_pos = mouse_world_pos / room_size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos.x, room_pos.y);
+        auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(room != nullptr) {
             if(!room_grid) overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);

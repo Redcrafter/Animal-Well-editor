@@ -57,28 +57,85 @@ void SpriteViewer::draw(GameData& game_data, const Texture& atlas) {
             selected_frame = sprite.animations[selected_animation].start;
         }
         auto& anim = sprite.animations[selected_animation];
-        ImGui::InputScalar("start", ImGuiDataType_U16, &anim.start);
-        ImGui::InputScalar("end", ImGuiDataType_U16, &anim.end);
-        ImGui::InputScalar("frame_delay", ImGuiDataType_U16, &anim.frame_delay);
+
+        auto inner_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+        {
+            uint16_t min = 0, max = sprite.composition_count - 1;
+
+            ImGui::PushMultiItemsWidths(2, ImGui::CalcItemWidth());
+            if(ImGui::SliderScalar("##min", ImGuiDataType_U16, &anim.start, &min, &max)) {
+                anim.end = std::clamp(anim.end, anim.start, max);
+            }
+            ImGui::PopItemWidth();
+            ImGui::SameLine(0, inner_spacing);
+
+            if(ImGui::SliderScalar("##max", ImGuiDataType_U16, &anim.end, &min, &max)) {
+                anim.start = std::clamp(anim.start, min, anim.end);
+            }
+            ImGui::PopItemWidth();
+            ImGui::SameLine(0, inner_spacing);
+
+            ImGui::Text("frame range");
+        }
+
+        int type = anim.type;
+        static const char* names[3] {"forward", "backward", "alternating"};
+        ImGui::Combo("type", &type, names, 3);
+        anim.type = (uint16_t)type;
 
         if(playing) {
-            frame_step++;
-            if(frame_step / 5 > anim.frame_delay) {
-                selected_frame++;
-                if(selected_frame > anim.end) {
-                    selected_frame = anim.start;
+            if(anim.start < anim.end) {
+                frame_step++;
+                if(frame_step > speed) {
+                    selected_frame += direction;
+
+                    if(selected_frame > anim.end) {
+                        if(anim.type == 0) {
+                            selected_frame = anim.start;
+                        } else if(anim.type == 1) {
+                            direction = -1;
+                        } else if(anim.type == 2) {
+                            direction = -1;
+                            selected_frame -= 2;
+                        }
+                    }
+                    if(selected_frame < anim.start) {
+                        if(anim.type == 0) {
+                            direction = 1;
+                        } else if(anim.type == 1) {
+                            selected_frame = anim.end;
+                        } else {
+                            direction = 1;
+                            selected_frame += 2;
+                        }
+                    }
+                    frame_step = 0;
                 }
-                frame_step = 0;
             }
 
             if(ImGui::Button("Pause")) playing = false;
         } else {
             if(ImGui::Button("Play")) {
                 playing = true;
-                selected_frame = anim.start;
+                if(anim.type != 1) {
+                    selected_frame = anim.start;
+                    direction = 1;
+                } else {
+                    selected_frame = anim.end;
+                    direction = -1;
+                }
                 frame_step = 0;
             }
         }
+
+        ImGui::SameLine(0, inner_spacing);
+
+        ImGui::PushItemWidth(ImGui::CalcItemWidth() - ImGui::GetCursorPosX() + ImGui::GetStyle().ItemSpacing.x);
+
+        ImGui::InputInt("Speed", &speed);
+        ImGui::PopItemWidth();
+
+        speed = std::max(0, speed);
     }
 
     if(sprite.composition_count > 1) {
