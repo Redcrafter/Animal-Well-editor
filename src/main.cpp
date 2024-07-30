@@ -1040,7 +1040,7 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
     return dockspace_id;
 }
 
-static void HelpMarker(const char* desc) {
+void HelpMarker(const char* desc) {
     ImGui::TextDisabled("(?)");
     if(ImGui::BeginItemTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
