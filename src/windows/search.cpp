@@ -29,7 +29,7 @@ void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::
     if(ImGui::Begin("Search")) {
         ImGui::InputInt("tile_id", &tile_id);
 
-        if(ImGui::IsItemDeactivated() && (ImGui::IsKeyPressed(ImGuiKey_Enter, ImGui::GetItemID()) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, ImGui::GetItemID()))) {
+        if(ImGui::IsItemDeactivated() && (ImGui::IsKeyPressed(ImGuiKey_Enter, ImGuiInputFlags_None, ImGui::GetItemID()) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, ImGuiInputFlags_None, ImGui::GetItemID()))) {
             search(game_data);
         }
 

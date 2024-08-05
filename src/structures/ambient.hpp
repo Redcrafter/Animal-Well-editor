@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -27,9 +28,9 @@ struct LightingData {
         auto count = *(uint64_t*)ptr;
         ptr += 8;
 
-        return  { (LightingData*)ptr, ((LightingData*)ptr) + count };
+        return {(LightingData*)ptr, ((LightingData*)ptr) + count};
     }
-    static std::vector<uint8_t> save(std::span<LightingData> data) {
+    static std::vector<uint8_t> save(const std::span<LightingData>& data) {
         std::vector<uint8_t> res(4 + 8 + data.size_bytes());
 
         auto ptr = res.data();

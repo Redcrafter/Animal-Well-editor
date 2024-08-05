@@ -1016,10 +1016,9 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
     ImGuiID dockspace_id = ImGui::GetID("DockSpace");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags, nullptr);
 
-    static auto first_time = true;
-    if(first_time) {
-        first_time = false;
-
+    static ImGuiID window_id = ImHashStr("Properties");
+    // only run if no settings for Properties window are found, meaning this is the first time the program is started
+    if(ImGui::FindWindowSettingsByID(window_id) == nullptr) {
         ImGui::DockBuilderRemoveNode(dockspace_id); // clear any previous layout
         ImGui::DockBuilderAddNode(dockspace_id, dockspace_flags | ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
@@ -1221,7 +1220,7 @@ static void DrawPreviewWindow() {
             ImGui::SeparatorText("Room Data");
             ImGui::Text("position %i %i", room->x, room->y);
             ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
-            const uint8_t bg_min = 0, bg_max = 18;
+            const uint8_t bg_min = 0, bg_max = 19;
             if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
                 renderBgs(game_data.maps[selectedMap], *bg_text);
             }
