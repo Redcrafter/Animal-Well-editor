@@ -6,7 +6,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-ImGuiTableFlags flags = ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
+constexpr ImGuiTableFlags flags = ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
 
 void HelpMarker(const char* desc);
 
@@ -83,6 +83,8 @@ void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::
                 }
             }
 
+            ImGui::PushID("results"); // push extra id to prevent id overlap
+
             // using clipper for large vertical lists
             ImGuiListClipper clipper;
             clipper.Begin(results.size());
@@ -116,6 +118,8 @@ void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::
                     ImGui::PopID();
                 }
             }
+
+            ImGui::PopID();
             ImGui::EndTable();
         }
     }
