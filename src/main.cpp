@@ -290,6 +290,11 @@ static bool load_game(const std::string& path) {
     try {
         game_data = GameData::load(path);
         load_data();
+
+        selectedMap = 0;
+        auto& map = game_data.maps[selectedMap];
+        camera.position = -(map.offset + map.size / 2) * room_size * 8;
+
         return true;
     } catch(std::exception& e) {
         error_dialog.push(e.what());
@@ -1655,7 +1660,7 @@ int runViewer() {
                     updateRender();
                 }
                 // center of screen
-                camera.position = (pos * 8) + 4;
+                camera.position = -(pos * 8 + 4);
             });
             tile_list.draw(game_data, render_data->atlas);
             tile_viewer.draw(game_data, should_update);
