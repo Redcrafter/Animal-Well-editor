@@ -27,7 +27,6 @@
 
 #include "windows/errors.hpp"
 #include "windows/search.hpp"
-#include "windows/sprite_viewer.hpp"
 #include "windows/tile_list.hpp"
 #include "windows/tile_viewer.hpp"
 
@@ -35,7 +34,7 @@
 // reduce global state
 // add tile names/descriptions
 // option to display hex numbers instead of decimal for data values (i.e. tile coords, tile id, room coords)
-// fix some special tile rendering (clock, bat, dog, space bunny, time capsule, uv light)
+// fix some special tile rendering (clock, bat, dog)
 
 GLFWwindow* window;
 
@@ -1131,7 +1130,7 @@ static void handle_input() {
                 selection_handler.move(mouse_world_pos - lastWorldPos);
             }
         } else if(!selecting && GetKey(ImGuiKey_MouseLeft)) {
-            camera.position -= delta / camera.position;
+            camera.position -= delta / camera.scale;
         }
     }
 
@@ -1186,19 +1185,49 @@ static void DrawPreviewWindow() {
         ImGui::Text("world pos %i %i", tile_location.x, tile_location.y);
 
         if(room != nullptr) {
-            ImGui::SeparatorText("Room Data");
-            ImGui::Text("position %i %i", room->x, room->y);
-            ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
-            const uint8_t bg_min = 0, bg_max = 19;
-            if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
-                renderBgs(game_data.maps[selectedMap]);
+            if(ImGui::CollapsingHeader("Room Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Text("position %i %i", room->x, room->y);
+                ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
+                const uint8_t bg_min = 0, bg_max = 19;
+                if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
+                    renderBgs(game_data.maps[selectedMap]);
+                }
+
+                const uint8_t pallet_max = game_data.ambient.size() - 1;
+                ImGui::SliderScalar("Lighting index", ImGuiDataType_U8, &room->lighting_index, &bg_min, &pallet_max);
+                ImGui::InputScalar("idk1", ImGuiDataType_U8, &room->idk1);
+                ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
+                ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
             }
 
-            const uint8_t pallet_max = game_data.ambient.size() - 1;
-            ImGui::SliderScalar("Lighting index", ImGuiDataType_U8, &room->lighting_index, &bg_min, &pallet_max);
-            ImGui::InputScalar("idk1", ImGuiDataType_U8, &room->idk1);
-            ImGui::InputScalar("idk2", ImGuiDataType_U8, &room->idk2);
-            ImGui::InputScalar("idk3", ImGuiDataType_U8, &room->idk3);
+            if(ImGui::CollapsingHeader("Lighting Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                LightingData amb {};
+                if(room->lighting_index < game_data.ambient.size())
+                    amb = game_data.ambient[room->lighting_index];
+
+                ImGui::BeginDisabled(room->lighting_index >= game_data.ambient.size());
+
+                ColorEdit4("ambient light", amb.ambient_light);
+                ImGui::SameLine();
+                HelpMarker("Alpha channel is unused");
+
+                ColorEdit4("fg ambient multi", amb.fg_ambient_multi);
+                ImGui::SameLine();
+                HelpMarker("Alpha channel is unused");
+
+                ColorEdit4("bg ambient multi", amb.bg_ambient_multi);
+                ImGui::SameLine();
+                HelpMarker("Alpha channel is unused");
+
+                ColorEdit4("lamp intensity", amb.light_intensity);
+                ImGui::DragFloat3("color dividers", &amb.dividers.x);
+                ImGui::DragFloat("color saturation", &amb.saturation);
+                ImGui::DragFloat("bg texture light multi", &amb.bg_tex_light_multi);
+                ImGui::EndDisabled();
+
+                if(room->lighting_index < game_data.ambient.size())
+                    game_data.ambient[room->lighting_index] = amb;
+            }
 
             auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
             auto tile = room->tiles[0][tp.y][tp.x];
@@ -1212,81 +1241,42 @@ static void DrawPreviewWindow() {
                 }
             }
 
-            ImGui::SeparatorText("Lighting Data");
+            if(ImGui::CollapsingHeader("Tile Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background"
+                                                                                                              : "N/A");
+                ImGui::Text("id %i", tile.tile_id);
+                ImGui::Text("param %i", tile.param);
 
-            LightingData amb {};
-            if(room->lighting_index < game_data.ambient.size())
-                amb = game_data.ambient[room->lighting_index];
+                if(ImGui::BeginTable("tile_flags_table", 2)) {
+                    int flags = tile.flags;
 
-            ImGui::BeginDisabled(room->lighting_index >= game_data.ambient.size());
+                    ImGui::BeginDisabled(tile_layer == 2);
+                    // clang-format off
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
+                    ImGui::TableNextColumn(); ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
 
-            ColorEdit4("ambient light", amb.ambient_light);
-            ImGui::SameLine();
-            HelpMarker("Alpha channel is unused");
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
+                    ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
+                    // clang-format on
+                    ImGui::EndDisabled();
 
-            ColorEdit4("fg ambient multi", amb.fg_ambient_multi);
-            ImGui::SameLine();
-            HelpMarker("Alpha channel is unused");
+                    if(flags != tile.flags) {
+                        room->tiles[tile_layer][tp.y][tp.x].flags = flags;
+                        updateRender();
+                    }
 
-            ColorEdit4("bg ambient multi", amb.bg_ambient_multi);
-            ImGui::SameLine();
-            HelpMarker("Alpha channel is unused");
+                    ImGui::EndTable();
+                }
+            }
 
-            ColorEdit4("lamp intensity", amb.light_intensity);
-            ImGui::DragFloat3("color dividers", &amb.dividers.x);
-            ImGui::DragFloat("color saturation", &amb.saturation);
-            ImGui::DragFloat("bg texture light multi", &amb.bg_tex_light_multi);
-            ImGui::EndDisabled();
-
-            if(room->lighting_index < game_data.ambient.size())
-                game_data.ambient[room->lighting_index] = amb;
-
-            ImGui::SeparatorText("Room Tile Data");
-            ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background"
-                                                                                                          : "N/A");
-            ImGui::Text("id %i", tile.tile_id);
-            ImGui::Text("param %i", tile.param);
-
-            if(ImGui::BeginTable("tile_flags_table", 2)) {
-                int flags = tile.flags;
-
+            if(ImGui::CollapsingHeader("Tile Flags", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::BeginDisabled(tile_layer == 2);
-                // clang-format off
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("vertical_mirror", &flags, 2);
-
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
-                ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
-                // clang-format on
-                ImGui::EndDisabled();
-
-                if(flags != tile.flags) {
-                    room->tiles[tile_layer][tp.y][tp.x].flags = flags;
+                if(DrawUvFlags(game_data.uvs[tile.tile_id])) {
                     updateRender();
                 }
-
-                ImGui::EndTable();
-            }
-
-            ImGui::SeparatorText("Tile Data");
-            ImGui::BeginDisabled(tile_layer == 2);
-            if(DrawUvFlags(game_data.uvs[tile.tile_id])) {
-                updateRender();
-            }
-            ImGui::EndDisabled();
-
-            if(game_data.sprites.contains(tile.tile_id)) {
-                // todo: lazy implementation could be improved with map
-                auto spriteId = std::ranges::find(spriteMapping, tile.tile_id, [](const TileMapping t) { return t.tile_id; })->internal_id;
-
-                ImGui::NewLine();
-                ImGui::Text("Sprite id %i", spriteId);
-                if(ImGui::Button("Open in Sprite Viewer")) {
-                    sprite_viewer.select_from_tile(tile.tile_id);
-                    sprite_viewer.focus();
-                }
+                ImGui::EndDisabled();
             }
         }
 
@@ -1369,14 +1359,8 @@ ctrl + y to redo.");
             ImGui::EndTable();
         }
 
-        auto& uv = game_data.uvs[placing.tile_id];
-
-        auto pos = glm::vec2(uv.pos);
-        auto size = glm::vec2(uv.size);
-        auto atlas_size = glm::vec2(render_data->atlas.width, render_data->atlas.height);
-
-        ImGui::Text("preview");
-        ImGui::Image((ImTextureID)render_data->atlas.id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+        ImGui::SeparatorText("preview");
+        ImGui_draw_tile(placing.tile_id, game_data, 0);
     }
 
     ImGui::End();
@@ -1674,8 +1658,7 @@ int runViewer() {
                 camera.position = (pos * 8) + 4;
             });
             tile_list.draw(game_data, render_data->atlas);
-            tile_viewer.draw(game_data, render_data->atlas, should_update);
-            sprite_viewer.draw(game_data, render_data->atlas);
+            tile_viewer.draw(game_data, should_update);
             DrawPreviewWindow();
 
             if(should_update)
