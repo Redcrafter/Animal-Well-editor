@@ -86,18 +86,13 @@ struct Texture {
     Texture() {
         glGenTextures(1, &id.value);
     }
-    /*
-    Texture(GLenum target, GLint internalformat, int width, int height, GLenum format, GLenum type, void* pixels) {
+    Texture(int width, int height) : width(width), height(height) {
         glGenTextures(1, &id.value);
-        glTexImage2D(target, 0, internalformat, width, height, 0, format, type, pixels);
-        this->width = width;
-        this->height = height;
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     }
-    */
-    /*explicit Texture(const char* filename) {
-        glGenTextures(1, &id.value);
-        Load(filename);
-    }*/
 
     ~Texture() {
         glDeleteTextures(1, &id.value);

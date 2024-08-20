@@ -35,17 +35,15 @@
 // reduce global state
 // add tile names/descriptions
 // option to display hex numbers instead of decimal for data values (i.e. tile coords, tile id, room coords)
-// fix some special tile rendering (clock, bat, dog, space bunny, time capsule)
+// fix some special tile rendering (clock, bat, dog, space bunny, time capsule, uv light)
 
 GLFWwindow* window;
 
-float gScale = 1;
-// Camera matrix
-glm::mat4 view = glm::lookAt(
-    glm::vec3(0, 0, 3), // Camera is at (0, 0, 3), in World Space
-    glm::vec3(0, 0, 0), // and looks at the origin
-    glm::vec3(0, 1, 0)  // Head is up
-);
+struct {
+    float scale = 1;
+    glm::vec2 position;
+} camera;
+
 glm::mat4 projection;
 glm::mat4 MVP;
 
@@ -54,25 +52,9 @@ glm::vec2 lastMousePos = glm::vec2(-1);
 
 glm::vec2 screenSize;
 
-std::unique_ptr<Mesh> fg_tiles, bg_tiles, bg_text, overlay;
-
 int selectedMap = 0;
 
 GameData game_data;
-
-std::unique_ptr<Texture> atlas;
-std::unique_ptr<Texture> bg_tex;
-
-glm::vec4 bg_color {0.8, 0.8, 0.8, 1};
-glm::vec4 fg_color {1, 1, 1, 1};
-glm::vec4 bg_tex_color {0.5, 0.5, 0.5, 1};
-
-bool show_fg = true;
-bool show_bg = true;
-bool show_bg_tex = true;
-bool room_grid = false;
-bool show_water = false;
-bool accurate_vines = true;
 
 constexpr auto room_size = glm::ivec2(40, 22);
 constexpr const char* modes[] = {"View", "Edit"};
@@ -112,26 +94,21 @@ static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) 
         scale = 1 / 1.1f;
     }
 
-    auto mp = glm::vec4(((mousePos - screenSize / 2.0f) / screenSize) * 2.0f, 0, 1);
-    mp.y = -mp.y;
-    auto wp = glm::vec2(glm::inverse(projection * view) * mp);
+    auto mp = (mousePos - screenSize / 2.0f) / camera.scale;
 
-    gScale *= scale;
-    view = glm::translate(view, glm::vec3(wp, 0));
-    view = glm::scale(view, glm::vec3(scale, scale, 1));
-    view = glm::translate(view, glm::vec3(-wp, 0));
+    camera.scale *= scale;
+    camera.position -= mp - mp / scale;
 }
 
 static void onResize(GLFWwindow* window, int width, int height) {
     screenSize = glm::vec2(width, height);
     glViewport(0, 0, width, height);
-    projection = glm::ortho<float>(0, width, height, 0, 0.0f, 100.0f);
+    projection = glm::ortho<float>(-width / 2, width / 2, height / 2, -height / 2, 0.0f, 100.0f);
 }
 
 static void updateRender() {
-    renderMap(game_data.maps[selectedMap], game_data.uvs, game_data.sprites, *fg_tiles, 0, accurate_vines);
-    renderMap(game_data.maps[selectedMap], game_data.uvs, game_data.sprites, *bg_tiles, 1, accurate_vines);
-    renderBgs(game_data.maps[selectedMap], *bg_text);
+    renderMap(game_data.maps[selectedMap], game_data.uvs, game_data.sprites);
+    renderBgs(game_data.maps[selectedMap]);
 }
 
 static void push_undo(std::unique_ptr<HistoryItem> item) {
@@ -263,12 +240,8 @@ static ImVec2 toImVec(const glm::vec2 vec) {
 }
 
 static void load_data() {
-    { // load atlas
-        if(atlas == nullptr) {
-            atlas = std::make_unique<Texture>();
-        }
-
-        auto tex = Image(game_data.get_asset(255));
+    { // chroma key atlas texture
+        Image tex {game_data.get_asset(255)};
         // chroma key cyan and replace with alpha
         auto vptr = tex.data();
         for(int i = 0; i < tex.width() * tex.height(); ++i) {
@@ -276,42 +249,37 @@ static void load_data() {
                 vptr[i] = 0;
             }
         }
-        atlas->Load(tex);
+        render_data->atlas.Load(tex);
     }
 
-    if(bg_tex == nullptr) {
-        bg_tex = std::make_unique<Texture>();
-    }
+    render_data->bunny_tex.Load(Image(game_data.get_asset(30)));
+    render_data->time_capsule_tex.Load(Image(game_data.get_asset(277)));
 
-    bg_tex->Bind();
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 320 * 4, 180 * 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    bg_tex->width = 320 * 4;
-    bg_tex->height = 180 * 4;
+    auto& bg_tex = render_data->bg_tex;
+    bg_tex.Bind();
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    bg_tex.LoadSubImage(320 * 0, 180 * 0, game_data.get_asset(11)); // 13
+    bg_tex.LoadSubImage(320 * 1, 180 * 0, game_data.get_asset(12)); // 14
+    bg_tex.LoadSubImage(320 * 2, 180 * 0, game_data.get_asset(13)); // 7, 8
+    bg_tex.LoadSubImage(320 * 3, 180 * 0, game_data.get_asset(14)); // 1
 
-    bg_tex->LoadSubImage(320 * 0, 180 * 0, game_data.get_asset(11)); // 13
-    bg_tex->LoadSubImage(320 * 1, 180 * 0, game_data.get_asset(12)); // 14
-    bg_tex->LoadSubImage(320 * 2, 180 * 0, game_data.get_asset(13)); // 7, 8
-    bg_tex->LoadSubImage(320 * 3, 180 * 0, game_data.get_asset(14)); // 1
+    bg_tex.LoadSubImage(320 * 0, 180 * 1, game_data.get_asset(15)); // 6
+    bg_tex.LoadSubImage(320 * 1, 180 * 1, game_data.get_asset(16)); // 9, 11
+    bg_tex.LoadSubImage(320 * 2, 180 * 1, game_data.get_asset(17)); // 10
+    bg_tex.LoadSubImage(320 * 3, 180 * 1, game_data.get_asset(18)); // 16
 
-    bg_tex->LoadSubImage(320 * 0, 180 * 1, game_data.get_asset(15)); // 6
-    bg_tex->LoadSubImage(320 * 1, 180 * 1, game_data.get_asset(16)); // 9, 11
-    bg_tex->LoadSubImage(320 * 2, 180 * 1, game_data.get_asset(17)); // 10
-    bg_tex->LoadSubImage(320 * 3, 180 * 1, game_data.get_asset(18)); // 16
+    bg_tex.LoadSubImage(320 * 0, 180 * 2, game_data.get_asset(19)); // 4, 5
+    bg_tex.LoadSubImage(320 * 1, 180 * 2, game_data.get_asset(20)); // 15
+    bg_tex.LoadSubImage(320 * 2, 180 * 2, game_data.get_asset(21)); // 19
+    bg_tex.LoadSubImage(320 * 3, 180 * 2, game_data.get_asset(22)); // 2, 3
 
-    bg_tex->LoadSubImage(320 * 0, 180 * 2, game_data.get_asset(19)); // 4, 5
-    bg_tex->LoadSubImage(320 * 1, 180 * 2, game_data.get_asset(20)); // 15
-    bg_tex->LoadSubImage(320 * 2, 180 * 2, game_data.get_asset(21)); // 19
-    bg_tex->LoadSubImage(320 * 3, 180 * 2, game_data.get_asset(22)); // 2, 3
-
-    bg_tex->LoadSubImage(320 * 0, 180 * 3, game_data.get_asset(23)); // 17
-    bg_tex->LoadSubImage(320 * 1, 180 * 3, game_data.get_asset(24)); // 18
-    bg_tex->LoadSubImage(320 * 2, 180 * 3, game_data.get_asset(26)); // 12
+    bg_tex.LoadSubImage(320 * 0, 180 * 3, game_data.get_asset(23)); // 17
+    bg_tex.LoadSubImage(320 * 1, 180 * 3, game_data.get_asset(24)); // 18
+    bg_tex.LoadSubImage(320 * 2, 180 * 3, game_data.get_asset(26)); // 12
 
     undo_buffer.clear();
     redo_buffer.clear();
+
     updateRender();
 }
 
@@ -849,27 +817,28 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
     textured_shader.Use();
     textured_shader.setMat4("MVP", MVP);
 
-    if(show_bg_tex) { // draw background textures
-        textured_shader.setVec4("color", bg_tex_color);
-        bg_tex->Bind();
-        bg_text->Draw();
+    if(render_data->show_bg_tex) { // draw background textures
+        textured_shader.setVec4("color", render_data->bg_tex_color);
+        render_data->bg_tex.Bind();
+        render_data->bg_text.Draw();
     }
 
-    atlas->Bind();
-    if(show_bg) { // draw background tiles
-        textured_shader.setVec4("color", bg_color);
-        bg_tiles->Draw();
-    }
-    if(show_fg) { // draw foreground tiles
-        textured_shader.setVec4("color", fg_color);
-        fg_tiles->Draw();
+    render_data->atlas.Bind();
+    if(render_data->show_bg) { // draw background tiles
+        textured_shader.setVec4("color", render_data->bg_color);
+        render_data->bg_tiles.Draw();
     }
 
-    // draw overlay (selection, water level)
-    // flat_shader.Use();
-    // flat_shader.setMat4("MVP", MVP);
-    // overlay->Buffer();
-    // overlay->Draw();
+    render_data->bunny_tex.Bind();
+    render_data->bunny.Draw();
+
+    render_data->time_capsule_tex.Bind();
+    render_data->time_capsule.Draw();
+
+    if(render_data->show_fg) { // draw foreground tiles
+        textured_shader.setVec4("color", render_data->fg_color);
+        render_data->fg_tiles.Draw();
+    }
 
     Image img(size.x, size.y);
     fb.tex.Bind();
@@ -966,15 +935,15 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
                 updateRender();
             }
 
-            ImGui::Checkbox("Foreground Tiles", &show_fg);
-            ImGui::ColorEdit4("fg tile color", &fg_color.r);
-            ImGui::Checkbox("Background Tiles", &show_bg);
-            ImGui::ColorEdit4("bg tile color", &bg_color.r);
-            ImGui::Checkbox("Background Texture", &show_bg_tex);
-            ImGui::ColorEdit4("bg Texture color", &bg_tex_color.r);
-            ImGui::Checkbox("Show Room Grid", &room_grid);
-            ImGui::Checkbox("Show Water Level", &show_water);
-            if(ImGui::Checkbox("Accurate vines", &accurate_vines)) {
+            ImGui::Checkbox("Foreground Tiles", &render_data->show_fg);
+            ImGui::ColorEdit4("fg tile color", &render_data->fg_color.r);
+            ImGui::Checkbox("Background Tiles", &render_data->show_bg);
+            ImGui::ColorEdit4("bg tile color", &render_data->bg_color.r);
+            ImGui::Checkbox("Background Texture", &render_data->show_bg_tex);
+            ImGui::ColorEdit4("bg Texture color", &render_data->bg_tex_color.r);
+            ImGui::Checkbox("Show Room Grid", &render_data->room_grid);
+            ImGui::Checkbox("Show Water Level", &render_data->show_water);
+            if(ImGui::Checkbox("Accurate vines", &render_data->accurate_vines)) {
                 updateRender();
             }
 
@@ -1098,7 +1067,7 @@ static void handle_input() {
 
     if(mouse_mode == 0) {
         if(GetKey(ImGuiKey_MouseLeft)) {
-            view = glm::translate(view, glm::vec3(-delta / gScale, 0));
+            camera.position -= delta / camera.scale;
         }
         if(GetKey(ImGuiKey_MouseRight)) {
             mode0_selection = screen_to_world(mousePos);
@@ -1162,7 +1131,7 @@ static void handle_input() {
                 selection_handler.move(mouse_world_pos - lastWorldPos);
             }
         } else if(!selecting && GetKey(ImGuiKey_MouseLeft)) {
-            view = glm::translate(view, glm::vec3(-delta / gScale, 0));
+            camera.position -= delta / camera.position;
         }
     }
 
@@ -1222,7 +1191,7 @@ static void DrawPreviewWindow() {
             ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
             const uint8_t bg_min = 0, bg_max = 19;
             if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
-                renderBgs(game_data.maps[selectedMap], *bg_text);
+                renderBgs(game_data.maps[selectedMap]);
             }
 
             const uint8_t pallet_max = game_data.ambient.size() - 1;
@@ -1234,10 +1203,10 @@ static void DrawPreviewWindow() {
             auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
             auto tile = room->tiles[0][tp.y][tp.x];
             int tile_layer = 0;
-            if(!show_fg || tile.tile_id == 0) {
+            if(!render_data->show_fg || tile.tile_id == 0) {
                 tile_layer = 1;
                 tile = room->tiles[1][tp.y][tp.x];
-                if(!show_bg || tile.tile_id == 0) {
+                if(!render_data->show_bg || tile.tile_id == 0) {
                     tile = {};
                     tile_layer = 2;
                 }
@@ -1348,12 +1317,12 @@ ctrl + y to redo.");
                 auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
                 auto tile = room->tiles[0][tp.y][tp.x];
 
-                if(show_fg && tile.tile_id != 0) {
+                if(render_data->show_fg && tile.tile_id != 0) {
                     placing = tile;
                     selectLayer = false;
                 } else {
                     tile = room->tiles[1][tp.y][tp.x];
-                    if(show_bg && tile.tile_id != 0) {
+                    if(render_data->show_bg && tile.tile_id != 0) {
                         placing = tile;
                         selectLayer = true;
                     } else {
@@ -1404,17 +1373,17 @@ ctrl + y to redo.");
 
         auto pos = glm::vec2(uv.pos);
         auto size = glm::vec2(uv.size);
-        auto atlas_size = glm::vec2(atlas->width, atlas->height);
+        auto atlas_size = glm::vec2(render_data->atlas.width, render_data->atlas.height);
 
         ImGui::Text("preview");
-        ImGui::Image((ImTextureID)atlas->id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+        ImGui::Image((ImTextureID)render_data->atlas.id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
     }
 
     ImGui::End();
 }
 
 static void draw_water_level() {
-    if(!show_water) {
+    if(!render_data->show_water) {
         return;
     }
 
@@ -1428,12 +1397,12 @@ static void draw_water_level() {
         auto bottom_left = glm::vec2 {room.x * 40 * 8, (room.y + 1) * 22 * 8};
         auto size = glm::vec2 {40 * 8, room.waterLevel - 176};
 
-        overlay->AddRectFilled(bottom_left, bottom_left + size, {}, {}, IM_COL32(0, 0, 255, 76));
+        render_data->overlay.AddRectFilled(bottom_left, bottom_left + size, {}, {}, IM_COL32(0, 0, 255, 76));
     }
 }
 
 static void draw_overlay() {
-    ImGuiIO& io = ImGui::GetIO();
+    auto& io = ImGui::GetIO();
 
     if(mouse_mode == 0) {
         glm::ivec2 tile_location = mode0_selection;
@@ -1452,9 +1421,9 @@ static void draw_overlay() {
             auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
             auto tile = room->tiles[0][tp.y][tp.x];
 
-            if(!show_fg || tile.tile_id == 0) {
+            if(!render_data->show_fg || tile.tile_id == 0) {
                 tile = room->tiles[1][tp.y][tp.x];
-                if(!show_bg || tile.tile_id == 0) {
+                if(!render_data->show_bg || tile.tile_id == 0) {
                     tile = {};
                 }
             }
@@ -1487,17 +1456,17 @@ static void draw_overlay() {
 
                     if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
 
-                    overlay->AddRect(ap, end, IM_COL32_WHITE, 0.5f);
+                    render_data->overlay.AddRect(ap, end, IM_COL32_WHITE, 0.5f);
                 }
 
-                overlay->AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
+                render_data->overlay.AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
             } else if(tile.tile_id != 0) {
-                overlay->AddRect(pos, pos + glm::vec2(game_data.uvs[tile.tile_id].size), IM_COL32_WHITE, 1);
+                render_data->overlay.AddRect(pos, pos + glm::vec2(game_data.uvs[tile.tile_id].size), IM_COL32_WHITE, 1);
             } else {
-                overlay->AddRect(pos, pos + glm::vec2(8), IM_COL32_WHITE, 1);
+                render_data->overlay.AddRect(pos, pos + glm::vec2(8), IM_COL32_WHITE, 1);
             }
-            if(!room_grid)
-                overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+            if(!render_data->room_grid)
+                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
         }
     } else if(mouse_mode == 1) {
         auto mouse_world_pos = screen_to_world(mousePos);
@@ -1505,14 +1474,14 @@ static void draw_overlay() {
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(room != nullptr) {
-            if(!room_grid) overlay->AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
-            overlay->AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
+            if(!render_data->room_grid) render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+            render_data->overlay.AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
 
             auto start = glm::ivec2(selection_handler.start());
 
             if(selection_handler.holding()) {
                 auto end = start + selection_handler.size();
-                overlay->AddRectDashed(start * 8, end * 8, IM_COL32_WHITE, 1, 4);
+                render_data->overlay.AddRectDashed(start * 8, end * 8, IM_COL32_WHITE, 1, 4);
             } else if(selection_handler.selecting()) {
                 auto end = mouse_world_pos;
                 if(end.x < start.x) {
@@ -1521,21 +1490,21 @@ static void draw_overlay() {
                 if(end.y < start.y) {
                     std::swap(start.y, end.y);
                 }
-                overlay->AddRectDashed(start * 8, end * 8 + 8, IM_COL32_WHITE, 1, 4);
+                render_data->overlay.AddRectDashed(start * 8, end * 8 + 8, IM_COL32_WHITE, 1, 4);
             }
         }
     }
 
-    if(room_grid) {
+    if(render_data->room_grid) {
         const auto& map = game_data.maps[selectedMap];
 
         for(int i = 0; i <= map.size.x; i++) {
             auto x = (map.offset.x + i) * 40 * 8;
-            overlay->AddLine({x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, IM_COL32(255, 255, 255, 191), 1 / gScale);
+            render_data->overlay.AddLine({x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, IM_COL32(255, 255, 255, 191), 1 / camera.scale);
         }
         for(int i = 0; i <= map.size.y; i++) {
             auto y = (map.offset.y + i) * 22 * 8;
-            overlay->AddLine({map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, IM_COL32(255, 255, 255, 191), 1 / gScale);
+            render_data->overlay.AddLine({map.offset.x * 40 * 8, y}, {(map.offset.x + map.size.x) * 40 * 8, y}, IM_COL32(255, 255, 255, 191), 1 / camera.scale);
         }
     }
 }
@@ -1648,10 +1617,7 @@ int runViewer() {
     ShaderProgram flat_shader("src/shaders/flat.vs", "src/shaders/flat.fs");
     ShaderProgram textured_shader("src/shaders/textured.vs", "src/shaders/textured.fs");
 
-    fg_tiles = std::make_unique<Mesh>();
-    bg_tiles = std::make_unique<Mesh>();
-    bg_text = std::make_unique<Mesh>();
-    overlay = std::make_unique<Mesh>();
+    render_data = std::make_unique<RenderData>();
 
 #pragma endregion
 
@@ -1675,19 +1641,29 @@ int runViewer() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        overlay->clear();
+        render_data->overlay.clear();
 
-        MVP = projection * view;
+        glm::mat4 view = glm::lookAt(
+            glm::vec3(0, 0, 3), // Camera is at (0, 0, 3), in World Space
+            glm::vec3(0, 0, 0), // and looks at the origin
+            glm::vec3(0, 1, 0)  // Head is up
+        );
 
-        handle_input();
+        auto model = glm::identity<glm::mat4>();
+        model = glm::scale(model, glm::vec3(camera.scale, camera.scale, 1));
+        model = glm::translate(model, glm::vec3(camera.position, 0));
+        MVP = projection * view * model;
+
         DockSpaceOverViewport(textured_shader);
         error_dialog.draw();
-        exe_exporter.draw_popup();
-        replacer.draw_popup();
 
         // skip rendering if no data is loaded
         if(game_data.loaded) {
             bool should_update = false;
+
+            handle_input();
+            exe_exporter.draw_popup();
+            replacer.draw_popup();
 
             search_window.draw(game_data, [](int map, const glm::ivec2 pos) {
                 if(map != selectedMap) {
@@ -1695,13 +1671,11 @@ int runViewer() {
                     updateRender();
                 }
                 // center of screen
-                auto center = glm::vec2(glm::inverse(projection * view) * glm::vec4(0, 0, 0, 1));
-                auto delta = glm::vec2(pos * 8) + glm::vec2(4, 4) - center;
-                view = glm::translate(view, glm::vec3(-delta, 0));
+                camera.position = (pos * 8) + 4;
             });
-            tile_list.draw(game_data, *atlas);
-            tile_viewer.draw(game_data, *atlas, should_update);
-            sprite_viewer.draw(game_data, *atlas);
+            tile_list.draw(game_data, render_data->atlas);
+            tile_viewer.draw(game_data, render_data->atlas, should_update);
+            sprite_viewer.draw(game_data, render_data->atlas);
             DrawPreviewWindow();
 
             if(should_update)
@@ -1709,7 +1683,7 @@ int runViewer() {
 
             draw_overlay();
             draw_water_level();
-            search_window.draw_overlay(game_data, selectedMap, *overlay, gScale);
+            search_window.draw_overlay(game_data, selectedMap, render_data->overlay, camera.scale);
 
             glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -1717,27 +1691,35 @@ int runViewer() {
             textured_shader.Use();
             textured_shader.setMat4("MVP", MVP);
 
-            if(show_bg_tex) { // draw background textures
-                textured_shader.setVec4("color", bg_tex_color);
-                bg_tex->Bind();
-                bg_text->Draw();
+            if(render_data->show_bg_tex) { // draw background textures
+                textured_shader.setVec4("color", render_data->bg_tex_color);
+                render_data->bg_tex.Bind();
+                render_data->bg_text.Draw();
             }
 
-            atlas->Bind();
-            if(show_bg) { // draw background tiles
-                textured_shader.setVec4("color", bg_color);
-                bg_tiles->Draw();
+            if(render_data->show_bg) { // draw background tiles
+                render_data->atlas.Bind();
+                textured_shader.setVec4("color", render_data->bg_color);
+                render_data->bg_tiles.Draw();
             }
-            if(show_fg) { // draw foreground tiles
-                textured_shader.setVec4("color", fg_color);
-                fg_tiles->Draw();
+
+            render_data->bunny_tex.Bind();
+            render_data->bunny.Draw();
+
+            render_data->time_capsule_tex.Bind();
+            render_data->time_capsule.Draw();
+
+            if(render_data->show_fg) { // draw foreground tiles
+                render_data->atlas.Bind();
+                textured_shader.setVec4("color", render_data->fg_color);
+                render_data->fg_tiles.Draw();
             }
 
             // draw overlay (selection, water level)
             flat_shader.Use();
             flat_shader.setMat4("MVP", MVP);
-            overlay->Buffer();
-            overlay->Draw();
+            render_data->overlay.Buffer();
+            render_data->overlay.Draw();
         } else {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
@@ -1765,6 +1747,8 @@ int runViewer() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    render_data = nullptr; // delete render data
 
     glfwDestroyWindow(window);
     glfwTerminate();
