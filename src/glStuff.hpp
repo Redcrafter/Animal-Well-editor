@@ -48,7 +48,7 @@ struct VAO {
     }
 
     void Bind() const {
-        glBindVertexArray(id);
+        glBindVertexArray(id.value);
     }
 };
 
@@ -149,7 +149,7 @@ struct Textured_Framebuffer {
         fb.Bind();
         tex.Bind();
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -162,7 +162,10 @@ struct Textured_Framebuffer {
             return;
 
         glBindTexture(GL_TEXTURE_2D, tex.id);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+        tex.width = width;
+        tex.height = height;
     }
 
     void Bind() {
@@ -204,7 +207,7 @@ struct ShaderProgram {
         glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
         if(!success) {
             glGetShaderInfoLog(vertex, 512, nullptr, infoLog);
-            error_dialog.pushf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
+            error_dialog.pushf("ERROR::SHADER::VERTEX::COMPILATION_FAILED \"%s\"\n%s\n", vertexPath.c_str(), infoLog);
         }
 
         // similiar for Fragment Shader
@@ -215,7 +218,7 @@ struct ShaderProgram {
         glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
         if(!success) {
             glGetShaderInfoLog(fragment, 512, nullptr, infoLog);
-            error_dialog.pushf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
+            error_dialog.pushf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED \"%s\"\n%s\n", fragmentPath.c_str(), infoLog);
         }
 
         // shader Program
@@ -248,14 +251,14 @@ struct ShaderProgram {
     void setInt(const char* name, int value) {
         glUniform1i(glGetUniformLocation(ID, name), value);
     }
-    void setVec3(const std::string& name, const glm::vec3& vec) {
-        setVec3(name.c_str(), vec);
+    void setFloat(const char* name, float value) {
+        glUniform1f(glGetUniformLocation(ID, name), value);
+    }
+    void setVec2(const char* name, const glm::vec2& vec) {
+        glUniform2f(glGetUniformLocation(ID, name), vec.x, vec.y);
     }
     void setVec3(const char* name, const glm::vec3& vec) {
         glUniform3f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z);
-    }
-    void setVec4(const std::string& name, const glm::vec4& vec) {
-        setVec4(name.c_str(), vec);
     }
     void setVec4(const char* name, const glm::vec4& vec) {
         glUniform4f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z, vec.w);
