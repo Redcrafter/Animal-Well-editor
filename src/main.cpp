@@ -120,6 +120,8 @@ static void push_undo(std::unique_ptr<HistoryItem> item) {
 class {
     // stores tiles underneath the current selection data
     MapSlice selection_buffer;
+    MapSlice temp_buffer;
+
     // location where current selection was originally from
     glm::ivec3 orig_pos {-1, -1, -1};
     // current selection location
@@ -138,24 +140,28 @@ class {
 
         orig_pos = {start_pos, selectLayer};
 
-        selection_buffer.fill({}, _size);
+        temp_buffer.fill({}, _size);
+        selection_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
     }
     // sets area and copies underlying data
-    void start_from_paste(glm::ivec2 start, glm::ivec2 size) {
+    void start_from_paste(glm::ivec2 pos, const MapSlice& data) {
         release();
-        _size = size;
-        start_pos = start; // take min so start is always in the top left
+        _size = data.size();
+        start_pos = pos;
 
         orig_pos = {start_pos, selectLayer};
 
-        selection_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
+        temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
+        push_undo(std::make_unique<AreaChange>(orig_pos, temp_buffer));
 
-        push_undo(std::make_unique<AreaChange>(orig_pos, selection_buffer));
+        // put copied tiles down
+        clipboard.paste(game_data.maps[selectedMap], orig_pos);
+        selection_buffer = data;
     }
     // apply changes without deselecting
     void apply() {
         if(start_pos != glm::ivec2(-1) && orig_pos != glm::ivec3(start_pos, selectLayer)) {
-            push_undo(std::make_unique<AreaMove>(glm::ivec3(start_pos, selectLayer), orig_pos, selection_buffer));
+            push_undo(std::make_unique<AreaMove>(glm::ivec3(start_pos, selectLayer), orig_pos, temp_buffer, selection_buffer));
         }
         orig_pos = glm::ivec3(start_pos, selectLayer);
     }
@@ -168,19 +174,26 @@ class {
     }
     // move selection to different layer
     void change_layer(int from, int to) {
-        selection_buffer.swap(game_data.maps[selectedMap], glm::ivec3(start_pos, from)); // put original data back
-        selection_buffer.swap(game_data.maps[selectedMap], glm::ivec3(start_pos, to));   // store underlying
+        auto& map = game_data.maps[selectedMap];
+        temp_buffer.paste(map, glm::ivec3(start_pos, from)); // put original data back
+        temp_buffer.copy(map, glm::ivec3(start_pos, to), _size); // store underlying
+        selection_buffer.paste(map, glm::ivec3(start_pos, selectLayer)); // place preview on top
         updateRender();
     }
 
     void move(glm::ivec2 delta) {
         if(delta == glm::ivec2(0, 0)) return;
-        selection_buffer.swap(game_data.maps[selectedMap], glm::ivec3(start_pos, selectLayer)); // put original data back
+        auto& map = game_data.maps[selectedMap];
+
+        temp_buffer.paste(map, glm::ivec3(start_pos, selectLayer)); // put original data back
 
         // move to new pos
         start_pos += delta;
+        // start_pos = glm::clamp(start_pos + delta, map.offset * room_size, (map.offset + map.size) * room_size - selection_buffer.size());
 
-        selection_buffer.swap(game_data.maps[selectedMap], glm::ivec3(start_pos, selectLayer)); // store underlying
+        // store underlying
+        temp_buffer.copy(map, glm::ivec3(start_pos, selectLayer), _size);
+        selection_buffer.paste(map, glm::ivec3(start_pos, selectLayer)); // place preview on top
 
         updateRender();
     }
@@ -381,6 +394,7 @@ static auto calc_tile_size(int i) {
     auto uv = game_data.uvs[i];
     auto size = uv.size;
 
+    // clang-format off
     switch(i) {
         case 793: // time capsule
             size = {64, 32};
@@ -465,6 +479,7 @@ static auto calc_tile_size(int i) {
             }
             break;
     }
+    // clang-format on
 
     return size;
 }
@@ -1116,10 +1131,8 @@ static void handle_input() {
 
         if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_V)) {
             // put old data in copy buffer
-            selection_handler.start_from_paste(mouse_world_pos, clipboard.size());
+            selection_handler.start_from_paste(mouse_world_pos, clipboard);
 
-            // put copied tiles down
-            clipboard.paste(game_data.maps[selectedMap], {mouse_world_pos, selectLayer});
             // selection_handler will push undo data once position is finalized
             updateRender();
         }
@@ -1463,24 +1476,25 @@ static void draw_overlay() {
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(room != nullptr) {
-            if(!render_data->room_grid) render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+            if(!render_data->room_grid)
+                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
             render_data->overlay.AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
+        }
 
-            auto start = glm::ivec2(selection_handler.start());
-
-            if(selection_handler.holding()) {
-                auto end = start + selection_handler.size();
-                render_data->overlay.AddRectDashed(start * 8, end * 8, IM_COL32_WHITE, 1, 4);
-            } else if(selection_handler.selecting()) {
-                auto end = mouse_world_pos;
-                if(end.x < start.x) {
-                    std::swap(start.x, end.x);
-                }
-                if(end.y < start.y) {
-                    std::swap(start.y, end.y);
-                }
-                render_data->overlay.AddRectDashed(start * 8, end * 8 + 8, IM_COL32_WHITE, 1, 4);
+        auto start = glm::ivec2(selection_handler.start());
+        if(selection_handler.holding()) {
+            auto end = start + selection_handler.size();
+            render_data->overlay.AddRectDashed(start * 8, end * 8, IM_COL32_WHITE, 1, 4);
+        } else if(selection_handler.selecting()) {
+            auto end = mouse_world_pos;
+            if(end.x < start.x) {
+                std::swap(start.x, end.x);
             }
+            if(end.y < start.y) {
+                std::swap(start.y, end.y);
+            }
+            render_data->overlay.AddRectDashed(start * 8, end * 8 + 8, IM_COL32_WHITE, 1, 4);
+            ImGui::SetTooltip("%ix%i", end.x - start.x + 1, end.y - start.y + 1);
         }
     }
 
@@ -1736,7 +1750,7 @@ int runViewer() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
-    render_data = nullptr; // delete render data
+    render_data = nullptr; // delete opengl resources
 
     glfwDestroyWindow(window);
     glfwTerminate();

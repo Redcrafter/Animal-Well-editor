@@ -64,5 +64,5 @@ class MapSlice {
         _size = {0, 0};
     }
 
-    glm::ivec2 size() { return _size; }
+    glm::ivec2 size() const { return _size; }
 };

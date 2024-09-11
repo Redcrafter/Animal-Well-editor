@@ -7,25 +7,29 @@ class HistoryItem {
   public:
     virtual ~HistoryItem() = default;
 
-    // apply changes to map and invert state so it can be undone
-    // returns position and location and size of changed area
+    // apply changes to map and invert state, so that it can be redone
+    // returns position and size of changed area
     virtual std::pair<glm::ivec3, glm::ivec2> apply(Map& map) = 0;
 };
 
 class AreaMove final : public HistoryItem {
     glm::ivec3 dest;
     glm::ivec3 src;
-    MapSlice tiles;
+
+    MapSlice dest_data;
+    MapSlice src_data;
 
   public:
-    AreaMove(glm::ivec3 dest, glm::ivec3 src, const MapSlice& tiles) : dest(dest), src(src), tiles(tiles) {}
+    AreaMove(glm::ivec3 dest, glm::ivec3 src, MapSlice dest_data, MapSlice src_data) : dest(dest), src(src), dest_data(std::move(dest_data)), src_data(std::move(src_data)) {}
 
     std::pair<glm::ivec3, glm::ivec2> apply(Map& map) override {
-        tiles.swap(map, dest); // restore dest tiles
-        tiles.swap(map, src); // restore src tiles
+        dest_data.swap(map, dest);
+        src_data.swap(map, src);
+
+        std::swap(src_data, dest_data);
         std::swap(src, dest);
 
-        return {dest, tiles.size()};
+        return {dest, dest_data.size()};
     }
 };
 
@@ -34,7 +38,7 @@ class AreaChange final : public HistoryItem {
     MapSlice tiles;
 
   public:
-    AreaChange(glm::ivec3 position, const MapSlice& tiles) : position(position), tiles(tiles) {}
+    AreaChange(glm::ivec3 position, MapSlice tiles) : position(position), tiles(std::move(tiles)) {}
 
     std::pair<glm::ivec3, glm::ivec2> apply(Map& map) override {
         tiles.swap(map, position);
@@ -47,7 +51,7 @@ class SingleChange final : public HistoryItem {
     MapTile tile;
 
   public:
-    SingleChange(glm::ivec3 position, const MapTile& tile) : position(position), tile(tile) {}
+    SingleChange(glm::ivec3 position, MapTile tile) : position(position), tile(tile) {}
 
     std::pair<glm::ivec3, glm::ivec2> apply(Map& map) override {
         auto t = map.getTile(position.z, position.x, position.y);
