@@ -1204,6 +1204,9 @@ static void DrawPreviewWindow() {
 
         if(room != nullptr) {
             if(ImGui::CollapsingHeader("Room Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if(ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+                    ImGui::SetTooltip("Properties that are stored for each room (40x22 tiles)");
+                }
                 ImGui::Text("position %i %i", room->x, room->y);
                 ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
                 const uint8_t bg_min = 0, bg_max = 19;
@@ -1219,6 +1222,9 @@ static void DrawPreviewWindow() {
             }
 
             if(ImGui::CollapsingHeader("Lighting Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if(ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+                    ImGui::SetTooltip("Properties that determine how the ambient lighting looks.\nCan be shared across multiple rooms by setting the Lighting Index");
+                }
                 LightingData amb {};
                 if(room->lighting_index < game_data.ambient.size())
                     amb = game_data.ambient[room->lighting_index];
@@ -1259,7 +1265,10 @@ static void DrawPreviewWindow() {
                 }
             }
 
-            if(ImGui::CollapsingHeader("Tile Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if(ImGui::CollapsingHeader("Instance Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if(ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+                    ImGui::SetTooltip("Properties that are stored for each instance of a given tile");
+                }
                 ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background"
                                                                                                               : "N/A");
                 ImGui::Text("id %i", tile.tile_id);
@@ -1289,11 +1298,18 @@ static void DrawPreviewWindow() {
                 }
             }
 
-            if(ImGui::CollapsingHeader("Tile Flags", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::BeginDisabled(tile_layer == 2);
-                if(DrawUvFlags(game_data.uvs[tile.tile_id])) {
-                    updateRender();
+            if(ImGui::CollapsingHeader("Tile Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if(ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+                    ImGui::SetTooltip("Properties that are shared between all tiles with the same id");
                 }
+                ImGui::BeginDisabled(tile_layer == 2);
+                auto& uv = game_data.uvs[tile.tile_id];
+
+                bool should_update = false;
+                should_update |= DrawUvFlags(uv);
+                should_update |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
+                should_update |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
+                if(should_update) updateRender();
                 ImGui::EndDisabled();
             }
         }
@@ -1315,7 +1331,7 @@ ctrl + v to paste at mouse position.\n\
 ctrl + z to undo.\n\
 ctrl + y to redo.");
 
-        ImGui::Text("world pos %i %i", mouse_world_pos.x, mouse_world_pos.y);
+        ImGui::Text("world position %i %i", mouse_world_pos.x, mouse_world_pos.y);
 
         auto room_pos = mouse_world_pos / room_size;
         auto room = game_data.maps[selectedMap].getRoom(room_pos);

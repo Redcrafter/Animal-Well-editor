@@ -112,7 +112,7 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
 
     auto& uv = game_data.uvs[selected_tile];
 
-    ImGui::SeparatorText("UV");
+    ImGui::SeparatorText("Tile Data");
     should_update |= DrawUvFlags(uv);
     should_update |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
     should_update |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
@@ -121,7 +121,7 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
         ImGui::SeparatorText("preview");
     } else {
         // auto selected_sprite = std::ranges::find(spriteMapping, selected_tile, [](const TileMapping t) { return t.tile_id; })->internal_id;
-        ImGui::SeparatorText("sprite");
+        ImGui::SeparatorText("Sprite Data");
 
         auto& sprite = game_data.sprites[selected_tile];
 
