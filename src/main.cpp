@@ -1680,6 +1680,8 @@ int runViewer() {
 
         render_data->overlay.clear();
 
+        handle_input();
+
         glm::mat4 view = glm::lookAt(
             glm::vec3(0, 0, 3), // Camera is at (0, 0, 3), in World Space
             glm::vec3(0, 0, 0), // and looks at the origin
@@ -1698,7 +1700,6 @@ int runViewer() {
         if(game_data.loaded) {
             bool should_update = false;
 
-            handle_input();
             exe_exporter.draw_popup();
             replacer.draw_popup();
 
