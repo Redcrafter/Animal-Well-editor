@@ -975,11 +975,6 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
             if(ImGui::MenuItem("Randomize items")) {
                 randomize();
             }
-            if(ImGui::MenuItem("Make everything transparent")) {
-                for(auto& uv : game_data.uvs) {
-                    uv.blocks_light = false;
-                }
-            }
             if(ImGui::MenuItem("Export Full Map Screenshot")) {
                 full_map_screenshot(textured_shader);
             }
