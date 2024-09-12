@@ -18,6 +18,9 @@ enum class BufferType {
 };
 
 struct RenderData {
+    ShaderProgram flat_shader {"src/shaders/flat.vs", "src/shaders/flat.fs"};
+    ShaderProgram textured_shader {"src/shaders/textured.vs", "src/shaders/textured.fs"};
+
     Mesh fg_tiles, bg_tiles, bg_text, overlay;
     Mesh bunny;
     Mesh time_capsule;

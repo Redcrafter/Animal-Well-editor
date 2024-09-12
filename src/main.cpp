@@ -802,7 +802,7 @@ class {
     }
 } replacer;
 
-void full_map_screenshot(ShaderProgram& textured_shader) {
+void full_map_screenshot() {
     static std::string export_path = std::filesystem::current_path().string() + "/map.png";
     std::string path;
     auto result = NFD::SaveDialog({{"png", {"png"}}}, export_path.c_str(), path, window);
@@ -833,18 +833,18 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
                         glm::vec3(map.offset * room_size * 8, 0),
                         glm::vec3(0, 1, 0));
 
-    textured_shader.Use();
-    textured_shader.setMat4("MVP", MVP);
+    render_data->textured_shader.Use();
+    render_data->textured_shader.setMat4("MVP", MVP);
 
     if(render_data->show_bg_tex) { // draw background textures
-        textured_shader.setVec4("color", render_data->bg_tex_color);
+        render_data->textured_shader.setVec4("color", render_data->bg_tex_color);
         render_data->bg_tex.Bind();
         render_data->bg_text.Draw();
     }
 
     render_data->atlas.Bind();
     if(render_data->show_bg) { // draw background tiles
-        textured_shader.setVec4("color", render_data->bg_color);
+        render_data->textured_shader.setVec4("color", render_data->bg_color);
         render_data->bg_tiles.Draw();
     }
 
@@ -855,7 +855,7 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
     render_data->time_capsule.Draw();
 
     if(render_data->show_fg) { // draw foreground tiles
-        textured_shader.setVec4("color", render_data->fg_color);
+        render_data->textured_shader.setVec4("color", render_data->fg_color);
         render_data->fg_tiles.Draw();
     }
 
@@ -876,7 +876,7 @@ void full_map_screenshot(ShaderProgram& textured_shader) {
 // The limitation with this call is that your window won't have a menu bar.
 // Even though we could pass window flags, it would also require the user to be able to call BeginMenuBar() somehow meaning we can't Begin/End in a single function.
 // But you can also use BeginMainMenuBar(). If you really want a menu bar inside the same window as the one hosting the dockspace, you will need to copy this code somewhere and tweak it.
-static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
+static ImGuiID DockSpaceOverViewport() {
     auto viewport = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -976,7 +976,7 @@ static ImGuiID DockSpaceOverViewport(ShaderProgram& textured_shader) {
                 randomize();
             }
             if(ImGui::MenuItem("Export Full Map Screenshot")) {
-                full_map_screenshot(textured_shader);
+                full_map_screenshot();
             }
             if(ImGui::MenuItem("Dump assets")) {
                 dump_assets();
@@ -1654,9 +1654,6 @@ int runViewer() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    ShaderProgram flat_shader("src/shaders/flat.vs", "src/shaders/flat.fs");
-    ShaderProgram textured_shader("src/shaders/textured.vs", "src/shaders/textured.fs");
-
     render_data = std::make_unique<RenderData>();
 
 #pragma endregion
@@ -1694,7 +1691,7 @@ int runViewer() {
         model = glm::translate(model, glm::vec3(camera.position, 0));
         MVP = projection * view * model;
 
-        DockSpaceOverViewport(textured_shader);
+        DockSpaceOverViewport();
         error_dialog.draw();
 
         // skip rendering if no data is loaded
@@ -1727,18 +1724,18 @@ int runViewer() {
             glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
             glClear(GL_COLOR_BUFFER_BIT);
 
-            textured_shader.Use();
-            textured_shader.setMat4("MVP", MVP);
+            render_data->textured_shader.Use();
+            render_data->textured_shader.setMat4("MVP", MVP);
 
             if(render_data->show_bg_tex) { // draw background textures
-                textured_shader.setVec4("color", render_data->bg_tex_color);
+                render_data->textured_shader.setVec4("color", render_data->bg_tex_color);
                 render_data->bg_tex.Bind();
                 render_data->bg_text.Draw();
             }
 
             if(render_data->show_bg) { // draw background tiles
                 render_data->atlas.Bind();
-                textured_shader.setVec4("color", render_data->bg_color);
+                render_data->textured_shader.setVec4("color", render_data->bg_color);
                 render_data->bg_tiles.Draw();
             }
 
@@ -1750,13 +1747,13 @@ int runViewer() {
 
             if(render_data->show_fg) { // draw foreground tiles
                 render_data->atlas.Bind();
-                textured_shader.setVec4("color", render_data->fg_color);
+                render_data->textured_shader.setVec4("color", render_data->fg_color);
                 render_data->fg_tiles.Draw();
             }
 
             // draw overlay (selection, water level)
-            flat_shader.Use();
-            flat_shader.setMat4("MVP", MVP);
+            render_data->flat_shader.Use();
+            render_data->flat_shader.setMat4("MVP", MVP);
             render_data->overlay.Buffer();
             render_data->overlay.Draw();
         } else {
