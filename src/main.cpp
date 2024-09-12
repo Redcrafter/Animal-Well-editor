@@ -1419,6 +1419,30 @@ static void draw_water_level() {
     }
 }
 
+static void overlay_for_sprite(MapTile tile, SpriteData& sprite, glm::vec2 pos, glm::vec2& bb_max, int composition_id, int j) {
+    auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
+    if(subsprite_id >= sprite.sub_sprites.size())
+        return;
+
+    const auto subsprite = sprite.sub_sprites[subsprite_id];
+    const auto layer = sprite.layers[j];
+    if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible)
+        return;
+
+    auto ap = pos + glm::vec2(subsprite.composite_pos);
+    if(tile.vertical_mirror) {
+        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
+    }
+    if(tile.horizontal_mirror) {
+        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
+    }
+
+    auto end = ap + glm::vec2(subsprite.size);
+    bb_max = glm::max(bb_max, end);
+
+    render_data->overlay.AddRect(ap, end, IM_COL32_WHITE, 0.5f);
+}
+
 static void draw_overlay() {
     auto& io = ImGui::GetIO();
 
@@ -1452,31 +1476,33 @@ static void draw_overlay() {
                 auto sprite = game_data.sprites[tile.tile_id];
                 auto bb_max = pos + glm::vec2(8, 8);
 
-                int composition_id = 0;
-                for(size_t j = 0; j < sprite.layers.size(); ++j) {
-                    auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
-                    if(subsprite_id >= sprite.sub_sprites.size())
-                        continue;
+                // warning: make sure overlay matches what is drawn in rendering.cpp
+                if(tile.tile_id == 237) { // clock
+                    overlay_for_sprite(tile, sprite, pos, bb_max, 3, 0); // left pendulum
+                    overlay_for_sprite(tile, sprite, pos + glm::vec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), bb_max, 3, 0); // right pendulum
+                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 1); // clock face
+                    // overlay_for_sprite(tile, sprite, pos, bb_max, 0, 2);  // speedrun numbers // too complicated to display
+                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body
+                    tile.horizontal_mirror = !tile.horizontal_mirror;
+                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body mirrored
+                    tile.horizontal_mirror = !tile.horizontal_mirror;
 
-                    const auto subsprite = sprite.sub_sprites[subsprite_id];
-                    const auto layer = sprite.layers[j];
-
-                    auto ap = pos + glm::vec2(subsprite.composite_pos);
-                    if(tile.vertical_mirror) {
-                        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
+                    for(size_t j = 4; j < sprite.layers.size(); ++j) {
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, j);
                     }
-                    if(tile.horizontal_mirror) {
-                        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
+                } else if(tile.tile_id == 341) { // big dog statue
+                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
+                    tile.horizontal_mirror = !tile.horizontal_mirror;
+                    overlay_for_sprite(tile, sprite, pos + glm::vec2(72 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
+                } else if(tile.tile_id == 568) { // big bat
+                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
+                    tile.horizontal_mirror = !tile.horizontal_mirror;
+                    overlay_for_sprite(tile, sprite, pos + glm::vec2(80 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
+                } else {
+                    for(size_t j = 0; j < sprite.layers.size(); ++j) {
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, j);
                     }
-
-                    auto end = ap + glm::vec2(subsprite.size);
-                    bb_max = glm::max(bb_max, end);
-
-                    if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
-
-                    render_data->overlay.AddRect(ap, end, IM_COL32_WHITE, 0.5f);
                 }
-
                 render_data->overlay.AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
             } else if(tile.tile_id != 0) {
                 render_data->overlay.AddRect(pos, pos + glm::vec2(game_data.uvs[tile.tile_id].size), IM_COL32_WHITE, 1);

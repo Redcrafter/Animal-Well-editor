@@ -144,36 +144,42 @@ static void render_tile(MapTile tile, uv_data uv, glm::ivec2 pos, const Map& map
     mesh.data.emplace_back(glm::vec2(pos) + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);    // bl
 }
 
+static void render_sprite_layer(MapTile tile, uv_data uv, glm::ivec2 pos, const SpriteData& sprite, int composition, int layer) {
+    assert(layer < sprite.layers.size());
+    assert(composition < sprite.composition_count);
+
+    auto subsprite_id = sprite.compositions[composition * sprite.layers.size() + layer];
+    if(subsprite_id >= sprite.sub_sprites.size()) return;
+
+    auto& sprite_layer = sprite.layers[layer];
+    if(sprite_layer.is_normals1 || sprite_layer.is_normals2 || !sprite_layer.is_visible) return;
+
+    auto& subsprite = sprite.sub_sprites[subsprite_id];
+
+    glm::ivec2 aUv = uv.pos + subsprite.atlas_pos;
+    glm::ivec2 size = subsprite.size;
+    auto ap = glm::vec2(pos) + glm::vec2(subsprite.composite_pos);
+
+    if(tile.vertical_mirror) {
+        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
+        aUv.y += size.y;
+        size.y = -size.y;
+    }
+    if(tile.horizontal_mirror) {
+        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
+        aUv.x += size.x;
+        size.x = -size.x;
+    }
+    assert(!tile.rotate_90 && !tile.rotate_180); // sprite rotation not implemented
+
+    render_data->add_face(ap, ap + glm::vec2(subsprite.size), aUv, aUv + size);
+}
+
 static void render_sprite(MapTile tile, uv_data uv, glm::ivec2 pos, const SpriteData& sprite) {
-    int composition_id = 0;
     pos = pos * 8;
 
     for(size_t j = 0; j < sprite.layers.size(); ++j) {
-        auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
-        if(subsprite_id >= sprite.sub_sprites.size()) continue;
-
-        auto& sprite_layer = sprite.layers[j];
-        if(sprite_layer.is_normals1 || sprite_layer.is_normals2 || !sprite_layer.is_visible) continue;
-
-        auto& subsprite = sprite.sub_sprites[subsprite_id];
-
-        glm::ivec2 aUv = uv.pos + subsprite.atlas_pos;
-        glm::ivec2 size = subsprite.size;
-        auto ap = glm::vec2(pos) + glm::vec2(subsprite.composite_pos);
-
-        if(tile.vertical_mirror) {
-            ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
-            aUv.y += size.y;
-            size.y = -size.y;
-        }
-        if(tile.horizontal_mirror) {
-            ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
-            aUv.x += size.x;
-            size.x = -size.x;
-        }
-        assert(!tile.rotate_90 && !tile.rotate_180); // sprite rotation not implemented
-
-        render_data->add_face(ap, ap + glm::vec2(subsprite.size), aUv, aUv + size);
+        render_sprite_layer(tile, uv, pos, sprite, 0, j);
     }
 }
 
@@ -191,7 +197,7 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
 
             for(int y2 = 0; y2 < 22; y2++) {
                 for(int x2 = 0; x2 < 40; x2++) {
-                    const auto tile = room.tiles[layer][y2][x2];
+                    auto tile = room.tiles[layer][y2][x2];
                     if(tile.tile_id == 0 || tile.tile_id >= 0x400) continue;
 
                     if(rd.accurate_vines && isVine(tile.tile_id)) {
@@ -202,7 +208,39 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
                     auto pos = glm::ivec2(x2 + room.x * 40, y2 + room.y * 22);
                     auto uv = uvs[tile.tile_id];
 
-                    if(tile.tile_id == 793) { // Time capsule
+                    if(tile.tile_id == 237) { // clock
+                        pos *= 8;
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 3, 0); // left pendulum
+                        render_sprite_layer(tile, uv, pos + glm::ivec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), sprites[tile.tile_id], 3, 0); // right pendulum
+
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 1); // clock face
+                        // render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 2);  // speedrun numbers // too complicated to display
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 3); // clock body
+                        
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 3); // clock body mirrored
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 4); // left door platform
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 5); // middle door platform
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 6); // right door platform
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 7); // left door
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 8); // middle door
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 9); // right door
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 10); // top door
+                    } else if(tile.tile_id == 341) { // big dog statue
+                        pos *= 8;
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        pos.x += 72 * (tile.horizontal_mirror ? 1 : -1);
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                    } else if(tile.tile_id == 568) { // big bat
+                        pos *= 8;
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        pos.x += 80 * (tile.horizontal_mirror ? 1 : -1);
+                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                    } else if(tile.tile_id == 793) { // Time capsule
                         rd.push_type(BufferType::time_capsule);
                         render_sprite(tile, uv, pos, sprites[tile.tile_id]);
                         rd.pop_type();
