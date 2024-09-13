@@ -842,8 +842,8 @@ void full_map_screenshot() {
         render_data->bg_text.Draw();
     }
 
-    render_data->atlas.Bind();
     if(render_data->show_bg) { // draw background tiles
+        render_data->atlas.Bind();
         render_data->textured_shader.setVec4("color", render_data->bg_color);
         render_data->bg_tiles.Draw();
     }
@@ -855,6 +855,7 @@ void full_map_screenshot() {
     render_data->time_capsule.Draw();
 
     if(render_data->show_fg) { // draw foreground tiles
+        render_data->atlas.Bind();
         render_data->textured_shader.setVec4("color", render_data->fg_color);
         render_data->fg_tiles.Draw();
     }

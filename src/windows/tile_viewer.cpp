@@ -107,7 +107,10 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
         return;
     }
 
-    ImGui::InputInt("Id", &selected_tile);
+    if(ImGui::InputInt("Id", &selected_tile)) {
+        selected_animation = 0;
+        selected_frame = 0;
+    }
     selected_tile = std::clamp(selected_tile, 0, (int)game_data.uvs.size() - 1);
 
     auto& uv = game_data.uvs[selected_tile];
