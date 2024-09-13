@@ -1438,6 +1438,12 @@ static void overlay_for_sprite(MapTile tile, SpriteData& sprite, glm::vec2 pos, 
     render_data->overlay.AddRect(ap, end, IM_COL32_WHITE, 0.5f);
 }
 
+static void overlay_for_sprite(MapTile tile, SpriteData& sprite, glm::vec2 pos, glm::vec2& bb_max, int frame) {
+    for(size_t j = 0; j < sprite.layers.size(); ++j) {
+        overlay_for_sprite(tile, sprite, pos, bb_max, frame, j);
+    }
+}
+
 static void draw_overlay() {
     auto& io = ImGui::GetIO();
 
@@ -1472,31 +1478,57 @@ static void draw_overlay() {
                 auto bb_max = pos + glm::vec2(8, 8);
 
                 // warning: make sure overlay matches what is drawn in rendering.cpp
-                if(tile.tile_id == 237) { // clock
-                    overlay_for_sprite(tile, sprite, pos, bb_max, 3, 0); // left pendulum
-                    overlay_for_sprite(tile, sprite, pos + glm::vec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), bb_max, 3, 0); // right pendulum
-                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 1); // clock face
-                    // overlay_for_sprite(tile, sprite, pos, bb_max, 0, 2);  // speedrun numbers // too complicated to display
-                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body
-                    tile.horizontal_mirror = !tile.horizontal_mirror;
-                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body mirrored
-                    tile.horizontal_mirror = !tile.horizontal_mirror;
+                switch(tile.tile_id) {
+                    case 237: // clock
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 3, 0); // left pendulum
+                        overlay_for_sprite(tile, sprite, pos + glm::vec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), bb_max, 3, 0); // right pendulum
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 1); // clock face
+                        // overlay_for_sprite(tile, sprite, pos, bb_max, 0, 2);  // speedrun numbers // too complicated to display
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body mirrored
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
 
-                    for(size_t j = 4; j < sprite.layers.size(); ++j) {
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, j);
-                    }
-                } else if(tile.tile_id == 341) { // big dog statue
-                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
-                    tile.horizontal_mirror = !tile.horizontal_mirror;
-                    overlay_for_sprite(tile, sprite, pos + glm::vec2(72 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
-                } else if(tile.tile_id == 568) { // big bat
-                    overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
-                    tile.horizontal_mirror = !tile.horizontal_mirror;
-                    overlay_for_sprite(tile, sprite, pos + glm::vec2(80 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
-                } else {
-                    for(size_t j = 0; j < sprite.layers.size(); ++j) {
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, j);
-                    }
+                        for(size_t j = 4; j < sprite.layers.size(); ++j)
+                            overlay_for_sprite(tile, sprite, pos, bb_max, 0, j);
+                        break;
+                    case 256: // spawn bulb
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
+                        break;
+                    case 341: // big dog statue
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        overlay_for_sprite(tile, sprite, pos + glm::vec2(72 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
+                        break;
+                    case 363: // peacock
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        overlay_for_sprite(tile, sprite, pos + glm::vec2(1, 0), bb_max, 0);
+                        break;
+                    case 367: // dog
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 18);
+                        break;
+                    case 568: // big bat
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
+                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                        overlay_for_sprite(tile, sprite, pos + glm::vec2(80 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
+                        break;
+                    case 627: // flame orbs
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
+                        if(tile.param < 4)
+                            render_data->overlay.AddRect(pos + glm::vec2(12, 24), pos + glm::vec2(12, 24) + glm::vec2(8), IM_COL32_WHITE, 0.5f);
+                        break;
+                    case 674: // jellyfish
+                        overlay_for_sprite(tile, sprite, pos, bb_max, tile.param < 4 ? tile.param * 3 : 0);
+                        break;
+                    case 730: // groundhog
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 10);
+                        break;
+                    default:
+                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
+                        break;
                 }
                 render_data->overlay.AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
             } else if(tile.tile_id != 0) {

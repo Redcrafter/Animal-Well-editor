@@ -64,15 +64,15 @@ static void renderVine(int x, int y, int layer, const uv_data& uv, const Room& r
     }
 }
 
-static void render_tile(MapTile tile, uv_data uv, glm::ivec2 pos, const Map& map, std::span<const uv_data> uvs, int layer) {
+static void render_tile(MapTile tile, uv_data uv, glm::ivec2 tile_pos, glm::vec2 world_pos, const Map& map, std::span<const uv_data> uvs, int layer) {
     auto right = glm::vec2(uv.size.x, 0);
     auto down = glm::vec2(0, uv.size.y);
 
     if(uv.contiguous || uv.self_contiguous) {
-        auto l_ = map.getTile(layer, pos.x - 1, pos.y);
-        auto r_ = map.getTile(layer, pos.x + 1, pos.y);
-        auto u_ = map.getTile(layer, pos.x, pos.y - 1);
-        auto d_ = map.getTile(layer, pos.x, pos.y + 1);
+        auto l_ = map.getTile(layer, tile_pos.x - 1, tile_pos.y);
+        auto r_ = map.getTile(layer, tile_pos.x + 1, tile_pos.y);
+        auto u_ = map.getTile(layer, tile_pos.x, tile_pos.y - 1);
+        auto d_ = map.getTile(layer, tile_pos.x, tile_pos.y + 1);
 
         bool l, r, u, d;
         if(uv.self_contiguous) {
@@ -128,20 +128,16 @@ static void render_tile(MapTile tile, uv_data uv, glm::ivec2 pos, const Map& map
     }
     auto uvp = glm::vec2(uv.pos);
 
-    pos *= 8;
-    // render_data->add_face(pos, glm::ivec2(pos) + glm::ivec2(uv.size), uvp, uvp + right + down);
-    // mesh.AddRectFilled(pos, glm::vec2(pos) + glm::vec2(uv.size), uvp, uvp + right + down);
-
     auto [mesh, tex] = render_data->get_current();
     auto atlasSize = glm::vec2(tex.width, tex.height);
 
-    mesh.data.emplace_back(pos, uvp / atlasSize);           // tl
-    mesh.data.emplace_back(glm::vec2(pos) + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize); // tr
-    mesh.data.emplace_back(glm::vec2(pos) + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);  // bl
+    mesh.data.emplace_back(world_pos, uvp / atlasSize); // tl
+    mesh.data.emplace_back(world_pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize); // tr
+    mesh.data.emplace_back(world_pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);  // bl
 
-    mesh.data.emplace_back(glm::vec2(pos) + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize);   // tr
-    mesh.data.emplace_back(glm::vec2(pos) + glm::vec2(uv.size), (uvp + down + right) / atlasSize); // br
-    mesh.data.emplace_back(glm::vec2(pos) + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);    // bl
+    mesh.data.emplace_back(world_pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize);   // tr
+    mesh.data.emplace_back(world_pos + glm::vec2(uv.size), (uvp + down + right) / atlasSize); // br
+    mesh.data.emplace_back(world_pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize);    // bl
 }
 
 static void render_sprite_layer(MapTile tile, uv_data uv, glm::ivec2 pos, const SpriteData& sprite, int composition, int layer) {
@@ -175,11 +171,9 @@ static void render_sprite_layer(MapTile tile, uv_data uv, glm::ivec2 pos, const 
     render_data->add_face(ap, ap + glm::vec2(subsprite.size), aUv, aUv + size);
 }
 
-static void render_sprite(MapTile tile, uv_data uv, glm::ivec2 pos, const SpriteData& sprite) {
-    pos = pos * 8;
-
+static void render_sprite(MapTile tile, uv_data uv, glm::ivec2 pos, const SpriteData& sprite, int frame = 0) {
     for(size_t j = 0; j < sprite.layers.size(); ++j) {
-        render_sprite_layer(tile, uv, pos, sprite, 0, j);
+        render_sprite_layer(tile, uv, pos, sprite, frame, j);
     }
 }
 
@@ -192,6 +186,18 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
     rd.time_capsule.clear();
 
     for(auto&& room : map.rooms) {
+        int yellow_sources = 0;
+        for(int y2 = 0; y2 < 22; y2++) {
+            for(int x2 = 0; x2 < 40; x2++) {
+                auto tile = room.tiles[0][y2][x2];
+                if(tile.tile_id == 0 || tile.tile_id >= 0x400) continue;
+
+                // yellow button || yellow_purple button || water bowl || lemon
+                if(tile.tile_id == 118 || tile.tile_id == 136 || tile.tile_id == 213 || tile.tile_id == 292)
+                    yellow_sources++;
+            }
+        }
+
         for(int layer = 0; layer < 2; layer++) {
             rd.push_type(layer == 0 ? BufferType::fg_tile : BufferType::bg_tile);
 
@@ -208,52 +214,87 @@ void renderMap(const Map& map, std::span<const uv_data> uvs, std::unordered_map<
                     auto pos = glm::ivec2(x2 + room.x * 40, y2 + room.y * 22);
                     auto uv = uvs[tile.tile_id];
 
-                    if(tile.tile_id == 237) { // clock
-                        pos *= 8;
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 3, 0); // left pendulum
-                        render_sprite_layer(tile, uv, pos + glm::ivec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), sprites[tile.tile_id], 3, 0); // right pendulum
+                    switch(tile.tile_id) {
+                        case 237: // clock
+                            pos *= 8;
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 3, 0); // left pendulum
+                            render_sprite_layer(tile, uv, pos + glm::ivec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), sprites[tile.tile_id], 3, 0); // right pendulum
 
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 1); // clock face
-                        // render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 2);  // speedrun numbers // too complicated to display
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 3); // clock body
-                        
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 3); // clock body mirrored
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 1); // clock face
+                            // render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 2);  // speedrun numbers // too complicated to display
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 3); // clock body
 
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 4); // left door platform
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 5); // middle door platform
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 6); // right door platform
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 7); // left door
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 8); // middle door
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 9); // right door
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 10); // top door
-                    } else if(tile.tile_id == 341) { // big dog statue
-                        pos *= 8;
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        pos.x += 72 * (tile.horizontal_mirror ? 1 : -1);
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
-                    } else if(tile.tile_id == 568) { // big bat
-                        pos *= 8;
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        pos.x += 80 * (tile.horizontal_mirror ? 1 : -1);
-                        render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
-                    } else if(tile.tile_id == 793) { // Time capsule
-                        rd.push_type(BufferType::time_capsule);
-                        render_sprite(tile, uv, pos, sprites[tile.tile_id]);
-                        rd.pop_type();
-                    } else if(tile.tile_id == 794) { // Big Space Bunny
-                        rd.push_type(BufferType::bunny);
-                        render_sprite(tile, uv, pos, sprites[tile.tile_id]);
-                        rd.pop_type();
-                    } else {
-                        if(sprites.contains(tile.tile_id)) {
-                            render_sprite(tile, uv, pos, sprites[tile.tile_id]);
-                        } else {
-                            render_tile(tile, uv, pos, map, uvs, layer);
-                        }
+                            tile.horizontal_mirror = !tile.horizontal_mirror;
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 3); // clock body mirrored
+                            tile.horizontal_mirror = !tile.horizontal_mirror;
+
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 4); // left door platform
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 5); // middle door platform
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 6); // right door platform
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 7); // left door
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 8); // middle door
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 9); // right door
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 10); // top door
+                            break;
+                        case 256: // spawn bulb
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id]);
+                            tile.horizontal_mirror = !tile.horizontal_mirror;
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id]);
+                            break;
+                        case 310: // button door indicator
+                            render_sprite_layer(tile, uv, pos * 8, sprites[tile.tile_id], yellow_sources > 4 ? 0 : yellow_sources, 0);
+                            break;
+                        case 341: // big dog statue
+                            pos *= 8;
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                            tile.horizontal_mirror = !tile.horizontal_mirror;
+                            pos.x += 72 * (tile.horizontal_mirror ? 1 : -1);
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                            break;
+                        case 363: // peacock
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id], 6);
+                            tile.horizontal_mirror = !tile.horizontal_mirror;
+                            render_sprite(tile, uv, pos * 8 + glm::ivec2(1, 0), sprites[tile.tile_id], 6);
+                            break;
+                        case 367: // dog
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id], 18);
+                            break;
+                        case 568: // big bat
+                            pos *= 8;
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                            tile.horizontal_mirror = !tile.horizontal_mirror;
+                            pos.x += 80 * (tile.horizontal_mirror ? 1 : -1);
+                            render_sprite_layer(tile, uv, pos, sprites[tile.tile_id], 0, 0);
+                            break;
+                        case 627: // flame orbs
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id]);
+                            if(tile.param < 4) {
+                                render_tile(tile, uvs[411 + tile.param], pos, pos * 8 + glm::ivec2(12, 24), map, uvs, layer);
+                            }
+                            break;
+                        case 674: // jellyfish
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id], tile.param < 4 ? tile.param * 3 : 0);
+                            break;
+                        case 730: // groundhog
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id], 10);
+                            break;
+                        case 793: // Time capsule
+                            rd.push_type(BufferType::time_capsule);
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id]);
+                            rd.pop_type();
+                            break;
+                        case 794: // Big Space Bunny
+                            rd.push_type(BufferType::bunny);
+                            render_sprite(tile, uv, pos * 8, sprites[tile.tile_id]);
+                            rd.pop_type();
+                            break;
+                        default:
+                            if(sprites.contains(tile.tile_id)) {
+                                render_sprite(tile, uv, pos * 8, sprites[tile.tile_id]);
+                            } else {
+                                render_tile(tile, uv, pos, pos * 8, map, uvs, layer);
+                            }
+                            break;
                     }
                 }
             }
