@@ -33,7 +33,7 @@ void TileList::draw(const GameData& game_data, const Texture& atlas) {
     for(const auto& [id, pos, size] : tiles_) {
         ImGui::PushID(id);
         if(ImGui::ImageButton((ImTextureID)atlas.id.value, ImVec2(32, 32), ImVec2(pos.x, pos.y), ImVec2(pos.x + size.x, pos.y + size.y))) {
-            tile_viewer.select_tile(tile);
+            tile_viewer.select_tile(id);
             tile_viewer.focus();
         }
         ImGui::SetItemTooltip("%i", id);
