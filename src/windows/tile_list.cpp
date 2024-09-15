@@ -251,7 +251,7 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
     }
 
     if(ImGui::Button("+")) {
-        groups.emplace_back("group " + std::to_string(groups.size() + 1));
+        groups.push_back(TileGroup {"group " + std::to_string(groups.size() + 1)});
     }
 
     if(drag_end) {
