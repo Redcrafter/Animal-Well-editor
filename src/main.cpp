@@ -59,6 +59,7 @@ constexpr auto room_size = glm::ivec2(40, 22);
 constexpr const char* modes[] = {"View", "Edit"};
 int mouse_mode = 0;
 glm::ivec2 mode0_selection = {-1, -1};
+MapTile mode1_placing;
 
 // 0 = forground, 1 = background
 bool selectLayer = false;
@@ -1311,8 +1312,6 @@ static void DrawPreviewWindow() {
         }
 
     } else if(mouse_mode == 1) {
-        static MapTile placing;
-
         auto mouse_world_pos = screen_to_world(mousePos);
 
         ImGui::SameLine();
@@ -1338,15 +1337,15 @@ ctrl + y to redo.");
                 auto tile = room->tiles[0][tp.y][tp.x];
 
                 if(render_data->show_fg && tile.tile_id != 0) {
-                    placing = tile;
+                    mode1_placing = tile;
                     selectLayer = false;
                 } else {
                     tile = room->tiles[1][tp.y][tp.x];
                     if(render_data->show_bg && tile.tile_id != 0) {
-                        placing = tile;
+                        mode1_placing = tile;
                         selectLayer = true;
                     } else {
-                        placing = {};
+                        mode1_placing = {};
                     }
                 }
             }
@@ -1356,9 +1355,9 @@ ctrl + y to redo.");
                 auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
                 auto tile_layer = room->tiles[selectLayer];
                 auto tile = tile_layer[tp.y][tp.x];
-                if(tile != placing) {
+                if(tile != mode1_placing) {
                     push_undo(std::make_unique<SingleChange>(glm::ivec3(mouse_world_pos, selectLayer), tile));
-                    tile_layer[tp.y][tp.x] = placing;
+                    tile_layer[tp.y][tp.x] = mode1_placing;
                     updateRender();
                 }
             }
@@ -1369,11 +1368,11 @@ ctrl + y to redo.");
             selection_handler.change_layer(!selectLayer, selectLayer);
         }
         ImGui::NewLine();
-        ImGui::InputScalar("id", ImGuiDataType_U16, &placing.tile_id);
-        ImGui::InputScalar("param", ImGuiDataType_U8, &placing.param);
+        ImGui::InputScalar("id", ImGuiDataType_U16, &mode1_placing.tile_id);
+        ImGui::InputScalar("param", ImGuiDataType_U8, &mode1_placing.param);
 
         if(ImGui::BeginTable("tile_flags_table", 2)) {
-            int flags = placing.flags;
+            int flags = mode1_placing.flags;
             // clang-format off
             ImGui::TableNextRow();
             ImGui::TableNextColumn(); ImGui::CheckboxFlags("Horizontal mirror", &flags, 1);
@@ -1384,13 +1383,13 @@ ctrl + y to redo.");
             ImGui::TableNextColumn(); ImGui::CheckboxFlags("Rotate 180", &flags, 8);
             // clang-format on
 
-            placing.flags = flags;
+            mode1_placing.flags = flags;
 
             ImGui::EndTable();
         }
 
         ImGui::SeparatorText("preview");
-        ImGui_draw_tile(placing.tile_id, game_data, 0);
+        ImGui_draw_tile(mode1_placing.tile_id, game_data, 0);
     }
 
     ImGui::End();
@@ -1655,6 +1654,8 @@ int runViewer() {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    tile_list.init(); // load settings handler for tiles
+
     ImGuiIO& io = ImGui::GetIO();
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
@@ -1744,7 +1745,7 @@ int runViewer() {
                 // center of screen
                 camera.position = -(pos * 8 + 4);
             });
-            tile_list.draw(game_data, render_data->atlas);
+            tile_list.draw(game_data, mode1_placing);
             tile_viewer.draw(game_data, should_update);
             DrawPreviewWindow();
 

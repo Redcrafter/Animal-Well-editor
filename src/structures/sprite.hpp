@@ -122,6 +122,24 @@ struct SpriteData {
 
         return out;
     }
+
+    std::pair<glm::ivec2, glm::ivec2> calcBB(int frame) const {
+        glm::ivec2 min {0, 0};
+        glm::ivec2 max {0, 0};
+        for(int i = 0; i < layers.size(); ++i) {
+            auto subsprite_id = compositions[frame * layers.size() + i];
+            if(subsprite_id >= sub_sprites.size())
+                continue;
+
+            auto& layer = layers[i];
+            if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
+
+            auto& subsprite = sub_sprites[subsprite_id];
+            min = glm::min(min, glm::ivec2(subsprite.composite_pos));
+            max = glm::max(max, glm::ivec2(subsprite.composite_pos + subsprite.size));
+        }
+        return {min, max};
+    }
 };
 
 struct TileMapping {

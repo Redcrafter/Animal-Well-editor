@@ -10,7 +10,7 @@ static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
 }
 
-static Texture& get_tex_for_tile(int tile_id) {
+Texture& get_tex_for_tile(int tile_id) {
     if(tile_id == 794) {
         return render_data->bunny_tex;
     }
@@ -52,7 +52,13 @@ void ImGui_draw_tile(uint16_t tile_id, const GameData& game_data, int frame) {
         auto pos = glm::vec2(uv.pos);
         auto size = glm::vec2(uv.size);
 
-        ImGui::Image((ImTextureID)tex.id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+        if(uv.contiguous || uv.self_contiguous) {
+            assert(size.x == 8 && size.y == 8);
+            ImGui::Image((ImTextureID)tex.id.value, toImVec(size * 32.0f), toImVec(pos / atlas_size), toImVec((pos + glm::vec2(32)) / atlas_size));
+        } else {
+            ImGui::Image((ImTextureID)tex.id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+        }
+
     }
 }
 

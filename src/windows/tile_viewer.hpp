@@ -29,6 +29,9 @@ class TileViewer {
         selected_animation = 0;
         selected_frame = 0;
     }
+    int get_selected() const {
+        return selected_tile;
+    }
 };
 
 inline TileViewer tile_viewer;
