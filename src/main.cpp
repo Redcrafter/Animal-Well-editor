@@ -605,12 +605,12 @@ class {
                 export_exe();
             }
         } else {
-            if(ImGui::MenuItem("Export...", "Ctrl+S")) {
+            if(ImGui::MenuItem("Export...##exe", "Ctrl+S")) {
                 export_explicit();
             }
         }
 
-        if(ImGui::MenuItem("Export As...", "Ctrl+Shift+S")) {
+        if(ImGui::MenuItem("Export As...##exe", "Ctrl+Shift+S")) {
             export_explicit();
         }
     }
@@ -1266,8 +1266,7 @@ static void DrawPreviewWindow() {
                 if(ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
                     ImGui::SetTooltip("Properties that are stored for each instance of a given tile");
                 }
-                ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background"
-                                                                                                              : "N/A");
+                ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background" : "N/A");
                 ImGui::Text("id %i", tile.tile_id);
                 ImGui::Text("param %i", tile.param);
 
@@ -1336,6 +1335,8 @@ ctrl + y to redo.");
                 auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
                 auto tile = room->tiles[0][tp.y][tp.x];
 
+                auto lastLayer = selectLayer;
+
                 if(render_data->show_fg && tile.tile_id != 0) {
                     mode1_placing = tile;
                     selectLayer = false;
@@ -1347,6 +1348,10 @@ ctrl + y to redo.");
                     } else {
                         mode1_placing = {};
                     }
+                }
+
+                if(lastLayer != selectLayer) {
+                    selection_handler.change_layer(lastLayer, selectLayer);
                 }
             }
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
