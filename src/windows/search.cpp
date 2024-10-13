@@ -2,9 +2,10 @@
 
 #include <algorithm>
 
-#include <glm/glm.hpp>
 #include <imgui.h>
 #include <imgui_internal.h>
+
+#include "../rendering.hpp"
 
 constexpr ImGuiTableFlags flags = ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
 
@@ -25,7 +26,7 @@ static int search_order(const SearchResult& el, int ColumnIndex, const GameData&
     return 0;
 }
 
-void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::ivec2)> callback) {
+void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::ivec2)> goto_callback) {
     if(ImGui::Begin("Search")) {
         ImGui::InputInt("tile_id", &tile_id);
 
@@ -113,7 +114,7 @@ void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::
                     ImGui::TableSetColumnIndex(9);
                     ImGui::PushID(row);
                     if(ImGui::SmallButton("goto")) {
-                        callback(el.map, pos);
+                        goto_callback(el.map, pos);
                     }
                     ImGui::PopID();
                 }
@@ -151,7 +152,7 @@ void SearchWindow::search(const GameData& game_data) {
     }
 }
 
-void SearchWindow::draw_overlay(const GameData& game_data, int selectedMap, Mesh& overlay, float gScale) {
+void SearchWindow::draw_overlay(const GameData& game_data, int selectedMap, float gScale) {
     if(!show_on_map || results.empty()) return;
 
     glm::vec2 size;
@@ -162,6 +163,7 @@ void SearchWindow::draw_overlay(const GameData& game_data, int selectedMap, Mesh
         size = game_data.uvs[searched_tile].size;
     }
 
+    auto& overlay = render_data->overlay;
     for(auto result : results) {
         if(result.map != selectedMap) continue;
 

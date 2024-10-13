@@ -1710,7 +1710,7 @@ int runViewer() {
 
             draw_overlay();
             draw_water_level();
-            search_window.draw_overlay(game_data, selectedMap, render_data->overlay, camera.scale);
+            search_window.draw_overlay(game_data, selectedMap, camera.scale);
 
             glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
             glClear(GL_COLOR_BUFFER_BIT);

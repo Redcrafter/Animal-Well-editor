@@ -3,7 +3,6 @@
 #include <vector>
 
 #include "../game_data.hpp"
-#include "../rendering.hpp"
 
 struct SearchResult {
     uint8_t map;
@@ -21,8 +20,8 @@ class SearchWindow {
     std::vector<SearchResult> results;
 
   public:
-    void draw(const GameData& game_data, std::function<void(int, glm::ivec2)> callback);
-    void draw_overlay(const GameData& game_data, int selectedMap, Mesh& overlay, float gScale);
+    void draw(const GameData& game_data, std::function<void(int, glm::ivec2)> goto_callback);
+    void draw_overlay(const GameData& game_data, int selectedMap, float gScale);
 
   private:
     void search(const GameData& game_data);

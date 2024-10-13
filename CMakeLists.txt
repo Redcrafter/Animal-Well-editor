@@ -5,6 +5,10 @@ project(Animal_Well_Editor C CXX)
 set(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+set(OpenGL_GL_PREFERENCE "GLVND")
+
+cmake_policy(SET CMP0069 NEW) 
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -36,7 +40,6 @@ add_subdirectory(lib/glfw)
 file(GLOB_RECURSE Common_sources 
     "./src/*.cpp" "./src/**/*.cpp"
     "./src/*.hpp" "./src/**/*.hpp"
-    "./src/*.ixx" "./src/**/*.ixx"
     "./src/*.h"   "./src/**/*.h"
     "./src/shaders/*")
 
