@@ -52,6 +52,24 @@ struct Room {
     uint8_t idk3;
 
     MapTile tiles[2][22][40];
+
+    // counts how many objects in a room affect things like doors
+    int count_yellow() const {
+        int yellow_sources = 0;
+
+        for(int y2 = 0; y2 < 22; y2++) {
+            for(int x2 = 0; x2 < 40; x2++) {
+                auto tile = tiles[0][y2][x2];
+                if(tile.tile_id == 0 || tile.tile_id >= 0x400) continue;
+
+              // yellow button || yellow_purple button || water bowl || lemon
+                if(tile.tile_id == 118 || tile.tile_id == 136 || tile.tile_id == 213 || tile.tile_id == 292)
+                    yellow_sources++;
+            }
+        }
+
+        return yellow_sources;
+    }
 };
 
 static_assert(sizeof(Room) == 0x1b88);
@@ -109,16 +127,16 @@ class Map {
     const Room* getRoom(glm::ivec2 pos) const {
         if(pos.x < 0 || pos.x >= 256 || pos.y < 0 || pos.y >= 256)
             return nullptr;
-        if(coordinate_map.contains(pos.x | (pos.y << 8))) {
-            return &rooms[coordinate_map.at(pos.x | (pos.y << 8))];
+        if(auto el = coordinate_map.find(pos.x | (pos.y << 8)); el != coordinate_map.end()) {
+            return &rooms[el->second];
         }
         return nullptr;
     }
     Room* getRoom(glm::ivec2 pos) {
         if(pos.x < 0 || pos.x >= 256 || pos.y < 0 || pos.y >= 256)
             return nullptr;
-        if(coordinate_map.contains(pos.x | (pos.y << 8))) {
-            return &rooms[coordinate_map.at(pos.x | (pos.y << 8))];
+        if(auto el = coordinate_map.find(pos.x | (pos.y << 8)); el != coordinate_map.end()) {
+            return &rooms[el->second];
         }
         return nullptr;
     }
@@ -130,9 +148,8 @@ class Map {
         if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
             return std::nullopt;
 
-        if(coordinate_map.contains(rx | (ry << 8))) {
-            const auto& room = rooms[coordinate_map.at(rx | (ry << 8))];
-            return room.tiles[layer][y % 22][x % 40];
+        if(auto el = coordinate_map.find(rx | (ry << 8)); el != coordinate_map.end()) {
+            return rooms[el->second].tiles[layer][y % 22][x % 40];
         }
 
         return std::nullopt;
@@ -145,9 +162,8 @@ class Map {
         if(rx < 0 || rx >= 256 || ry < 0 || ry >= 256)
             return;
 
-        if(coordinate_map.contains(rx | (ry << 8))) {
-            auto& room = rooms[coordinate_map.at(rx | (ry << 8))];
-            room.tiles[layer][y % 22][x % 40] = tile;
+        if(auto el = coordinate_map.find(rx | (ry << 8)); el != coordinate_map.end()) {
+            rooms[el->second].tiles[layer][y % 22][x % 40] = tile;
         }
     }
 

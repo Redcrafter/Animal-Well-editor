@@ -7,6 +7,7 @@
 #include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 
+#include "../rendering.hpp"
 #include "tile_viewer.hpp"
 
 Texture& get_tex_for_tile(int tile_id);
@@ -54,7 +55,14 @@ static bool TileButton(uint16_t tile, const GameData& game_data, int box_size, i
 
     if(game_data.sprites.contains(tile)) {
         auto sprite = game_data.sprites.at(tile);
-        auto [s_min, s_max] = sprite.calcBB(frame);
+        auto s_min = glm::ivec2(INT_MAX);
+        auto s_max = glm::ivec2(INT_MIN);
+
+        render_sprite_custom([&](glm::ivec2 pos, glm::u16vec2 size, glm::ivec2 uv_pos, glm::ivec2 uv_size) {
+            s_min = glm::min(s_min, pos);
+            s_max = glm::max(s_max, pos + glm::ivec2(size));
+        }, {tile}, game_data, 0);
+
         auto s_size = s_max - s_min;
 
         float div = std::max(s_size.x, s_size.y) / (float)box_size;
@@ -72,22 +80,11 @@ static bool TileButton(uint16_t tile, const GameData& game_data, int box_size, i
             p2.x = center + width / 2;
         }
 
-        for(int i = 0; i < sprite.layers.size(); ++i) {
-            auto subsprite_id = sprite.compositions[frame * sprite.layers.size() + i];
-            if(subsprite_id >= sprite.sub_sprites.size())
-                continue;
-
-            auto& layer = sprite.layers[i];
-            if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
-
-            auto& subsprite = sprite.sub_sprites[subsprite_id];
-
-            auto aUv = toImVec(uv.pos + subsprite.atlas_pos) / atlas_size;
-            
-            auto ap = p1 + toImVec(glm::ivec2(subsprite.composite_pos) - s_min) / div;
-
-            draw_list->AddImage((ImTextureID)tex.id.value, ap, ap + toImVec(subsprite.size) / div, aUv, aUv + toImVec(subsprite.size) / atlas_size);
-        }
+        render_sprite_custom([&](glm::ivec2 pos, glm::u16vec2 size, glm::ivec2 uv_pos, glm::ivec2 uv_size) {
+            auto aUv = toImVec(uv_pos) / atlas_size;
+            auto ap = p1 + toImVec(pos - s_min) / div;
+            draw_list->AddImage((ImTextureID)tex.id.value, ap, ap + toImVec(size) / div, aUv, aUv + toImVec(uv_size) / atlas_size);
+        }, {tile}, game_data, 0);
     } else {
         auto uv1 = toImVec(uv.pos + uv.size) / atlas_size;
 
@@ -104,14 +101,13 @@ static bool TileButton(uint16_t tile, const GameData& game_data, int box_size, i
             p2.x = center + width / 2;
         }
 
-        if(uv.contiguous ||uv.self_contiguous) {
+        if(uv.flags & (contiguous | self_contiguous)) {
             // draw tile without neighbours
             window->DrawList->AddImage((ImTextureID*)tex.id.value, p1, p2, uv0 + ImVec2(0, 0) / atlas_size, uv1 + ImVec2(16, 16) / atlas_size, IM_COL32_WHITE);
         } else {
             window->DrawList->AddImage((ImTextureID*)tex.id.value, p1, p2, uv0, uv1, IM_COL32_WHITE);
         }
-    }    
-
+    }
 
     return pressed;
 }
@@ -233,7 +229,7 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
             auto height = ep.y - sp.y;
             auto y = mp.y - sp.y;
 
-            if(y > 0 && y < height / 2 ) {
+            if(y > 0 && y < height / 2) {
                 // top half
                 auto y1 = sp.y - g->Style.ItemSpacing.y / 2;
                 window->DrawList->AddRectFilled(ImVec2(sp.x, y1 - 1), ImVec2(sp.x + width, y1 + 1), IM_COL32_WHITE);
@@ -319,7 +315,6 @@ static void MyUserData_ReadLine(ImGuiContext* ctx, ImGuiSettingsHandler* handler
     } else {
         error_dialog.push("invalid tile list format");
     }
-
 }
 
 static void MyUserData_WriteAll(ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* out_buf) {

@@ -39,10 +39,10 @@ static_assert(sizeof(SpriteLayer) == 3);
 
 struct SpriteData {
     glm::u16vec2 size;
-    uint16_t composition_count;
+    uint16_t frame_count;
 
     std::vector<SpriteAnimation> animations;
-    std::vector<uint8_t> compositions; // are frames
+    std::vector<uint8_t> compositions;
     std::vector<SubSprite> sub_sprites;
     std::vector<SpriteLayer> layers;
 
@@ -61,12 +61,12 @@ struct SpriteData {
         size.x = *(uint16_t*)(ptr + 4);
         size.y = *(uint16_t*)(ptr + 6);
         auto layer_count = *(uint16_t*)(ptr + 8);
-        composition_count = *(uint16_t*)(ptr + 10);
+        frame_count = *(uint16_t*)(ptr + 10);
         auto subsprite_count = *(uint8_t*)(ptr + 12);
         auto animation_count = *(uint8_t*)(ptr + 13);
 
         auto anim_size = animation_count * sizeof(SpriteAnimation);
-        auto comp_size = layer_count * composition_count;
+        auto comp_size = layer_count * frame_count;
         auto subs_size = subsprite_count * sizeof(SubSprite);
         auto layer_size = layer_count * sizeof(SpriteLayer);
 
@@ -97,12 +97,11 @@ struct SpriteData {
         std::vector<uint8_t> out(0x30 + anim_size + comp_size + subs_size + layer_size);
 
         auto ptr = out.data();
-        // magic
-        *(int*)ptr = 0x0003AC1D;
+        *(int*)ptr = 0x0003AC1D; // magic
         *(uint16_t*)(ptr + 4) = size.x;
         *(uint16_t*)(ptr + 6) = size.y;
         *(uint16_t*)(ptr + 8) = layers.size();
-        *(uint16_t*)(ptr + 10) = composition_count;
+        *(uint16_t*)(ptr + 10) = frame_count;
         *(uint8_t*)(ptr + 12) = sub_sprites.size();
         *(uint8_t*)(ptr + 13) = animations.size();
 
@@ -121,24 +120,6 @@ struct SpriteData {
         ptr += layer_size;
 
         return out;
-    }
-
-    std::pair<glm::ivec2, glm::ivec2> calcBB(int frame) const {
-        glm::ivec2 min {0, 0};
-        glm::ivec2 max {0, 0};
-        for(int i = 0; i < layers.size(); ++i) {
-            auto subsprite_id = compositions[frame * layers.size() + i];
-            if(subsprite_id >= sub_sprites.size())
-                continue;
-
-            auto& layer = layers[i];
-            if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible) continue;
-
-            auto& subsprite = sub_sprites[subsprite_id];
-            min = glm::min(min, glm::ivec2(subsprite.composite_pos));
-            max = glm::max(max, glm::ivec2(subsprite.composite_pos + subsprite.size));
-        }
-        return {min, max};
     }
 };
 

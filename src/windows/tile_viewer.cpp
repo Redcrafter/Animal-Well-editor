@@ -6,6 +6,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include "../rendering.hpp"
+
 static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
 }
@@ -52,13 +54,11 @@ void ImGui_draw_tile(uint16_t tile_id, const GameData& game_data, int frame) {
         auto pos = glm::vec2(uv.pos);
         auto size = glm::vec2(uv.size);
 
-        if(uv.contiguous || uv.self_contiguous) {
-            assert(size.x == 8 && size.y == 8);
-            ImGui::Image((ImTextureID)tex.id.value, toImVec(size * 32.0f), toImVec(pos / atlas_size), toImVec((pos + glm::vec2(32)) / atlas_size));
-        } else {
-            ImGui::Image((ImTextureID)tex.id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
+        if(uv.flags & (contiguous | self_contiguous)) {
+            assert(uv.size == glm::u16vec2(8));
+            size *= 4;
         }
-
+        ImGui::Image((ImTextureID)tex.id.value, toImVec(size * 8.0f), toImVec(pos / atlas_size), toImVec((pos + size) / atlas_size));
     }
 }
 
@@ -69,38 +69,38 @@ bool DrawUvFlags(uv_data& uv) {
     uint32_t flags = uv.flags;
     // clang-format off
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides left", &flags, 1 << 0); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides left", &flags, collides_left); // correct
     ImGui::TableNextColumn(); ImGui::CheckboxFlags("Hidden", &flags, 1 << 10);
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides right", &flags, 1 << 1); // correct
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Blocks Light", &flags, 1 << 8);
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides right", &flags, collides_right); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Blocks Light", &flags, blocks_light);
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides up", &flags, 1 << 2); // correct
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("obscures", &flags, 1 << 6);
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides up", &flags, collides_up); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("obscures", &flags, obscures);
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides down", &flags, 1 << 3); // correct
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Contiguous", &flags, 1 << 7); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Collides down", &flags, collides_down); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Contiguous", &flags, contiguous); // correct
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Not Placeable", &flags, 1 << 4);
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Self Contiguous", &flags, 1 << 9); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Not Placeable", &flags, not_placeable);
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Self Contiguous", &flags, self_contiguous); // correct
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Additive", &flags, 1 << 5);
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Dirt", &flags, 1 << 11);
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Additive", &flags, additive);
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Dirt", &flags, dirt);
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Has Normals", &flags, 1 << 12); // correct
-    ImGui::TableNextColumn(); ImGui::CheckboxFlags("UV Light", &flags, 1 << 13); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("Has Normals", &flags, has_normals); // correct
+    ImGui::TableNextColumn(); ImGui::CheckboxFlags("UV Light", &flags, uv_light); // correct
     // clang-format on
 
     ImGui::EndTable();
 
     if(flags != uv.flags) {
-        uv.flags = flags;
+        uv.flags = (uv_flags)flags;
         return true;
     }
 
@@ -147,7 +147,7 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
 
             auto inner_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
             {
-                uint16_t min = 0, max = sprite.composition_count - 1;
+                uint16_t min = 0, max = sprite.frame_count - 1;
 
                 ImGui::PushMultiItemsWidths(2, ImGui::CalcItemWidth());
                 if(ImGui::SliderScalar("##min", ImGuiDataType_U16, &anim.start, &min, &max)) {
@@ -225,9 +225,9 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
             speed = std::max(0, speed);
         }
 
-        if(sprite.composition_count > 1) {
+        if(sprite.frame_count > 1) {
             ImGui::NewLine();
-            ImGui::SliderInt("frame", &selected_frame, 0, sprite.composition_count - 1);
+            ImGui::SliderInt("frame", &selected_frame, 0, sprite.frame_count - 1);
         }
 
         auto* tex = &render_data->atlas;

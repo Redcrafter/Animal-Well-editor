@@ -21,7 +21,7 @@ GameData GameData::load(const std::string& path) {
         data.sprites[tile_id] = SpriteData(data.get_asset(asset_id));
     }
 
-    data.uvs = uv_data::parse(data.get_asset(254));
+    data.uvs = uv_data::load(data.get_asset(254));
     data.ambient = LightingData::parse(data.get_asset(179));
 
     data.loaded = true;

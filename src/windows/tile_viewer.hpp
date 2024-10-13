@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../game_data.hpp"
-#include "../rendering.hpp"
 
 void ImGui_draw_tile(uint16_t tile_id, const GameData& game_data, int frame);
 

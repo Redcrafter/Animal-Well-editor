@@ -101,8 +101,10 @@ static void onResize(GLFWwindow* window, int width, int height) {
 }
 
 static void updateRender() {
-    renderMap(game_data.maps[selectedMap], game_data.uvs, game_data.sprites);
-    renderBgs(game_data.maps[selectedMap]);
+    auto& map = game_data.maps[selectedMap];
+
+    renderMap(map, game_data);
+    renderBgs(map);
 }
 
 static void push_undo(std::unique_ptr<HistoryItem> item) {
@@ -478,11 +480,11 @@ static auto calc_tile_size(int i) {
 
         default:
             if(!game_data.sprites.contains(i)) { // not a sprite
-                if(uv.contiguous || uv.self_contiguous) {
+                if(uv.flags & (contiguous | self_contiguous)) {
                     size.x *= 4;
                     size.y *= 4;
                 }
-                if(uv.has_normals) {
+                if(uv.flags & has_normals) {
                     size.y *= 2;
                 }
             }
@@ -975,6 +977,7 @@ static ImGuiID DockSpaceOverViewport() {
             if(ImGui::Checkbox("Accurate vines", &render_data->accurate_vines)) {
                 updateRender();
             }
+            ImGui::Checkbox("Show Sprite Composition", &render_data->sprite_composition);
 
             ImGui::EndMenu();
         }
@@ -1439,36 +1442,6 @@ static void draw_water_level() {
     }
 }
 
-static void overlay_for_sprite(MapTile tile, SpriteData& sprite, glm::vec2 pos, glm::vec2& bb_max, int composition_id, int j) {
-    auto subsprite_id = sprite.compositions[composition_id * sprite.layers.size() + j];
-    if(subsprite_id >= sprite.sub_sprites.size())
-        return;
-
-    const auto subsprite = sprite.sub_sprites[subsprite_id];
-    const auto layer = sprite.layers[j];
-    if(layer.is_normals1 || layer.is_normals2 || !layer.is_visible)
-        return;
-
-    auto ap = pos + glm::vec2(subsprite.composite_pos);
-    if(tile.vertical_mirror) {
-        ap.y = pos.y + (sprite.size.y - (subsprite.composite_pos.y + subsprite.size.y));
-    }
-    if(tile.horizontal_mirror) {
-        ap.x = pos.x + (sprite.size.x - (subsprite.composite_pos.x + subsprite.size.x));
-    }
-
-    auto end = ap + glm::vec2(subsprite.size);
-    bb_max = glm::max(bb_max, end);
-
-    render_data->overlay.AddRect(ap, end, IM_COL32_WHITE, 0.5f);
-}
-
-static void overlay_for_sprite(MapTile tile, SpriteData& sprite, glm::vec2 pos, glm::vec2& bb_max, int frame) {
-    for(size_t j = 0; j < sprite.layers.size(); ++j) {
-        overlay_for_sprite(tile, sprite, pos, bb_max, frame, j);
-    }
-}
-
 static void draw_overlay() {
     auto& io = ImGui::GetIO();
 
@@ -1496,73 +1469,31 @@ static void draw_overlay() {
                 }
             }
 
-            auto pos = glm::vec2(tile_location) * 8.0f;
+            const auto pos = glm::ivec2(tile_location) * 8;
 
             if(game_data.sprites.contains(tile.tile_id)) {
                 auto sprite = game_data.sprites[tile.tile_id];
-                auto bb_max = pos + glm::vec2(8, 8);
 
-                // warning: make sure overlay matches what is drawn in rendering.cpp
-                switch(tile.tile_id) {
-                    case 237: // clock
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 3, 0); // left pendulum
-                        overlay_for_sprite(tile, sprite, pos + glm::vec2(111 * (tile.horizontal_mirror ? -1 : 1), 0), bb_max, 3, 0); // right pendulum
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 1); // clock face
-                        // overlay_for_sprite(tile, sprite, pos, bb_max, 0, 2);  // speedrun numbers // too complicated to display
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 3); // clock body mirrored
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
+                auto bb_min = pos;
+                auto bb_max = pos + glm::ivec2(sprite.size);
+                render_sprite_custom([&](glm::ivec2 pos_, glm::u16vec2 size, glm::ivec2 uv_pos, glm::ivec2 uv_size) {
+                    pos_ += pos;
+                    auto max = pos_ + glm::ivec2(size);
+                    if(render_data->sprite_composition)
+                        render_data->overlay.AddRect(pos_, max, IM_COL32_WHITE, 0.5f);
 
-                        for(size_t j = 4; j < sprite.layers.size(); ++j)
-                            overlay_for_sprite(tile, sprite, pos, bb_max, 0, j);
-                        break;
-                    case 256: // spawn bulb
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
-                        break;
-                    case 341: // big dog statue
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        overlay_for_sprite(tile, sprite, pos + glm::vec2(72 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
-                        break;
-                    case 363: // peacock
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        overlay_for_sprite(tile, sprite, pos + glm::vec2(1, 0), bb_max, 0);
-                        break;
-                    case 367: // dog
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 18);
-                        break;
-                    case 568: // big bat
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0, 0);
-                        tile.horizontal_mirror = !tile.horizontal_mirror;
-                        overlay_for_sprite(tile, sprite, pos + glm::vec2(80 * (tile.horizontal_mirror ? 1 : -1), 0), bb_max, 0, 0);
-                        break;
-                    case 627: // flame orbs
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
-                        if(tile.param < 4)
-                            render_data->overlay.AddRect(pos + glm::vec2(12, 24), pos + glm::vec2(12, 24) + glm::vec2(8), IM_COL32_WHITE, 0.5f);
-                        break;
-                    case 674: // jellyfish
-                        overlay_for_sprite(tile, sprite, pos, bb_max, tile.param < 4 ? tile.param * 3 : 0);
-                        break;
-                    case 730: // groundhog
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 10);
-                        break;
-                    default:
-                        overlay_for_sprite(tile, sprite, pos, bb_max, 0);
-                        break;
-                }
-                render_data->overlay.AddRect(pos, bb_max, IM_COL32(255, 255, 255, 204), 1);
+                    bb_min = glm::min(glm::min(bb_min, pos_), max);
+                    bb_max = glm::max(glm::max(bb_max, pos_), max);
+                }, tile, game_data, room->count_yellow());
+
+                render_data->overlay.AddRect(bb_min, bb_max, render_data->sprite_composition ? IM_COL32(255, 255, 255, 204) : IM_COL32_WHITE, 1);
             } else if(tile.tile_id != 0) {
-                render_data->overlay.AddRect(pos, pos + glm::vec2(game_data.uvs[tile.tile_id].size), IM_COL32_WHITE, 1);
+                render_data->overlay.AddRect(pos, pos + glm::ivec2(game_data.uvs[tile.tile_id].size), IM_COL32_WHITE, 1);
             } else {
-                render_data->overlay.AddRect(pos, pos + glm::vec2(8), IM_COL32_WHITE, 1);
+                render_data->overlay.AddRect(pos, pos + 8, IM_COL32_WHITE, 1);
             }
             if(!render_data->room_grid)
-                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + room_size * 8, IM_COL32(255, 255, 255, 127), 1);
         }
     } else if(mouse_mode == 1) {
         auto mouse_world_pos = screen_to_world(mousePos);
@@ -1571,7 +1502,7 @@ static void draw_overlay() {
 
         if(room != nullptr) {
             if(!render_data->room_grid)
-                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + glm::ivec2(40, 22) * 8, IM_COL32(255, 255, 255, 127), 1);
+                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + room_size * 8, IM_COL32(255, 255, 255, 127), 1);
             render_data->overlay.AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
         }
 
