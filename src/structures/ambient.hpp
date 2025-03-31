@@ -9,13 +9,13 @@
 #include <glm/glm.hpp>
 
 struct LightingData {
-    glm::u8vec4 fg_ambient_multi; // alpha is ignored
-    glm::u8vec4 bg_ambient_multi; // alpha is ignored
-    glm::u8vec4 ambient_light; // alpha is ignored
-    glm::u8vec4 light_intensity;
-    glm::fvec3 dividers; // divides colors
-    float saturation; // global saturation
-    float bg_tex_light_multi; // amount lights affect background texture
+    glm::u8vec4 fg_ambient_light_color; // alpha is ignored
+    glm::u8vec4 bg_ambient_light_color; // alpha is ignored
+    glm::u8vec4 ambient_light_color; // alpha is ignored
+    glm::u8vec4 fog_color;
+    glm::fvec3 color_gain;
+    float color_saturation;
+    float far_background_reflectivity; // amount lights affect background texture
 
     static std::vector<LightingData> parse(std::span<const uint8_t> data) {
         auto ptr = data.data();

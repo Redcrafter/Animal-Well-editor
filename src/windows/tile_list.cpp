@@ -7,7 +7,7 @@
 #include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 
-#include "../rendering.hpp"
+#include "../rendering/geometry.hpp"
 #include "tile_viewer.hpp"
 
 Texture& get_tex_for_tile(int tile_id);

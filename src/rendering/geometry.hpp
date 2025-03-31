@@ -4,79 +4,14 @@
 #include <span>
 #include <unordered_map>
 
-#include "game_data.hpp"
-#include "glStuff.hpp"
-
-enum class BufferType {
-    fg_tile,
-    bg_tile,
-    bunny,
-    time_capsule
-};
-
-struct RenderData {
-    ShaderProgram flat_shader {"src/shaders/flat.vs", "src/shaders/flat.fs"};
-    ShaderProgram textured_shader {"src/shaders/textured.vs", "src/shaders/textured.fs"};
-
-    Mesh fg_tiles, bg_tiles, bg_text, overlay;
-    Mesh bunny;
-    Mesh time_capsule;
-
-    Texture atlas;
-    Texture bg_tex {320 * 4, 180 * 4};
-    Texture bunny_tex;
-    Texture time_capsule_tex;
-
-    glm::vec4 bg_color {0.8, 0.8, 0.8, 1};
-    glm::vec4 fg_color {1, 1, 1, 1};
-    glm::vec4 bg_tex_color {0.5, 0.5, 0.5, 1};
-
-    std::vector<BufferType> type_stack;
-
-    bool show_fg = true;
-    bool show_bg = true;
-    bool show_bg_tex = true;
-
-    bool room_grid = false;
-    bool show_water = false;
-    bool accurate_vines = true;
-    bool sprite_composition = false;
-
-    RenderData() = default;
-    RenderData(const RenderData&) = delete;
-    void operator=(const RenderData&) = delete;
-
-    void push_type(BufferType type) {
-        type_stack.push_back(type);
-    }
-    void pop_type() {
-        type_stack.pop_back();
-    }
-
-    std::tuple<Mesh&, Texture&> get_current() {
-        switch(type_stack.back()) {
-            case BufferType::fg_tile: return {fg_tiles, atlas};
-            case BufferType::bg_tile: return {bg_tiles, atlas};
-            case BufferType::bunny: return {bunny, bunny_tex};
-            case BufferType::time_capsule: return {time_capsule, time_capsule_tex};
-            default:
-                assert(false);
-                throw std::runtime_error("unreachable");
-        }
-    }
-
-    void add_face(glm::vec2 p_min, glm::vec2 p_max, glm::ivec2 uv_min, glm::ivec2 uv_max, uint32_t col = IM_COL32_WHITE) {
-        auto [mesh, tex] = get_current();
-        glm::vec2 tex_size {tex.width, tex.height};
-        mesh.AddRectFilled(p_min, p_max, glm::vec2(uv_min) / tex_size, glm::vec2(uv_max) / tex_size, col);
-    }
-};
-
-inline std::unique_ptr<RenderData> render_data;
+#include "../game_data.hpp"
+#include "../glStuff.hpp"
+#include "renderData.hpp"
 
 void renderMap(const Map& map, const GameData& game_data);
-
 void renderBgs(const Map& map);
+void render_visibility(const Map& map, std::span<const uv_data> uvs);
+void renderLights(const Map& map, std::span<const uv_data> uvs);
 
 template<typename F>
 void render_sprite_layer(F& f, MapTile tile, uv_data uv, const SpriteData& sprite, int frame, int layer, glm::ivec2 offset = {0, 0}) {
@@ -117,6 +52,8 @@ void render_sprite(F&& f, MapTile tile, uv_data uv, const SpriteData& sprite, gl
     }
 }
 
+// todo custom tile rendering? tile 17 should be green
+
 template<typename F>
 void render_sprite_custom(F&& f, MapTile tile, const GameData& game_data, int yellow_sources) {
     constexpr glm::ivec2 zero = {0, 0};
@@ -125,25 +62,33 @@ void render_sprite_custom(F&& f, MapTile tile, const GameData& game_data, int ye
     auto& sprite = game_data.sprites.at(tile.tile_id);
 
     switch(tile.tile_id) {
+        case 147: // big fern
+            render_sprite(f, tile, uv, sprite, zero, 2);
+            break;
         case 237: // clock
             render_sprite_layer(f, tile, uv, sprite, 3, 0); // left pendulum
             render_sprite_layer(f, tile, uv, sprite, 3, 0, {111 * (tile.horizontal_mirror ? -1 : 1), 0}); // right pendulum
 
             render_sprite_layer(f, tile, uv, sprite, 0, 1); // clock face
             // render_sprite_layer(f, tile, uv, sprite, 0, 2);  // speedrun numbers // too complicated to display
-            render_sprite_layer(f, tile, uv, sprite, 0, 3); // clock body
 
+            // render_data->push_type(BufferType::midground);
+            render_sprite_layer(f, tile, uv, sprite, 0, 3); // clock body
             tile.horizontal_mirror = !tile.horizontal_mirror;
             render_sprite_layer(f, tile, uv, sprite, 0, 3); // clock body mirrored
             tile.horizontal_mirror = !tile.horizontal_mirror;
+            render_sprite_layer(f, tile, uv, sprite, 0, 10); // top door
+            // render_data->pop_type();
 
+            render_data->push_type(BufferType::fg_tile);
             render_sprite_layer(f, tile, uv, sprite, 0, 4); // left door platform
             render_sprite_layer(f, tile, uv, sprite, 0, 5); // middle door platform
             render_sprite_layer(f, tile, uv, sprite, 0, 6); // right door platform
+            render_data->pop_type();
+
             render_sprite_layer(f, tile, uv, sprite, 0, 7); // left door
             render_sprite_layer(f, tile, uv, sprite, 0, 8); // middle door
             render_sprite_layer(f, tile, uv, sprite, 0, 9); // right door
-            render_sprite_layer(f, tile, uv, sprite, 0, 10); // top door
             break;
         case 256: // spawn bulb
             render_sprite(f, tile, uv, sprite);

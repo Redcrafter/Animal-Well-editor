@@ -6,7 +6,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include "../rendering.hpp"
+#include "../rendering/renderData.hpp"
 
 static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
@@ -14,12 +14,12 @@ static ImVec2 toImVec(const glm::vec2 vec) {
 
 Texture& get_tex_for_tile(int tile_id) {
     if(tile_id == 794) {
-        return render_data->bunny_tex;
+        return render_data->textures.bunny;
     }
     if(tile_id == 793) {
-        return render_data->time_capsule_tex;
+        return render_data->textures.time_capsule;
     }
-    return render_data->atlas;
+    return render_data->textures.atlas;
 }
 
 void ImGui_draw_tile(uint16_t tile_id, const GameData& game_data, int frame) {
@@ -228,13 +228,6 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
         if(sprite.frame_count > 1) {
             ImGui::NewLine();
             ImGui::SliderInt("frame", &selected_frame, 0, sprite.frame_count - 1);
-        }
-
-        auto* tex = &render_data->atlas;
-        if(selected_tile == 794) {
-            tex = &render_data->bunny_tex;
-        } else if(selected_tile == 793) {
-            tex = &render_data->time_capsule_tex;
         }
     }
 

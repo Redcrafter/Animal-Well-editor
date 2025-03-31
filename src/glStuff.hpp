@@ -78,8 +78,8 @@ struct VBO {
 
 struct Texture {
     Unique<GLuint> id = 0;
-    int width;
-    int height;
+    int width = -1;
+    int height = -1;
 
     // GLenum target;
 
@@ -155,6 +155,9 @@ struct Textured_Framebuffer {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex.id, 0);
+
+        tex.width = width;
+        tex.height = height;
     }
 
     void resize(int width, int height) {
@@ -247,6 +250,9 @@ struct ShaderProgram {
 
     void setMat4(const char* name, const glm::mat4& mat) {
         glUniformMatrix4fv(glGetUniformLocation(ID, name), 1, GL_FALSE, &mat[0][0]);
+    }
+    void setBool(const char* name, bool value) {
+        setInt(name, value ? 1 : 0);
     }
     void setInt(const char* name, int value) {
         glUniform1i(glGetUniformLocation(ID, name), value);

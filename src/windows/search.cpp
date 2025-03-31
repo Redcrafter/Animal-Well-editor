@@ -5,7 +5,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include "../rendering.hpp"
+#include "../rendering/renderData.hpp"
 
 constexpr ImGuiTableFlags flags = ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_Resizable;
 

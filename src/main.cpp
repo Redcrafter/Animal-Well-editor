@@ -23,7 +23,9 @@
 #include "game_data.hpp"
 #include "history.hpp"
 #include "map_slice.hpp"
-#include "rendering.hpp"
+#include "rendering/geometry.hpp"
+#include "rendering/pipeline.hpp"
+#include "rendering/renderData.hpp"
 
 #include "windows/errors.hpp"
 #include "windows/search.hpp"
@@ -46,6 +48,7 @@ glm::vec2 lastMousePos = glm::vec2(-1);
 glm::vec2 screenSize;
 
 int selectedMap = 0;
+bool updateGeometry = false;
 
 GameData game_data;
 
@@ -98,13 +101,6 @@ static void onResize(GLFWwindow* window, int width, int height) {
     screenSize = glm::vec2(width, height);
     glViewport(0, 0, width, height);
     projection = glm::ortho<float>(-width / 2, width / 2, height / 2, -height / 2, 0.0f, 100.0f);
-}
-
-static void updateRender() {
-    auto& map = game_data.maps[selectedMap];
-
-    renderMap(map, game_data);
-    renderBgs(map);
 }
 
 static void push_undo(std::unique_ptr<HistoryItem> item) {
@@ -190,7 +186,7 @@ class {
         temp_buffer.paste(map, glm::ivec3(start_pos, from)); // put original data back
         temp_buffer.copy(map, glm::ivec3(start_pos, to), _size); // store underlying
         selection_buffer.paste(map, glm::ivec3(start_pos, to)); // place preview on top
-        updateRender();
+        updateGeometry = true;
     }
 
     void move(glm::ivec2 delta) {
@@ -206,7 +202,7 @@ class {
         temp_buffer.copy(map, glm::ivec3(start_pos, mode1_layer), _size);
         selection_buffer.paste(map, glm::ivec3(start_pos, mode1_layer)); // place preview on top
 
-        updateRender();
+        updateGeometry = true;
     }
 
     bool selecting() const {
@@ -231,7 +227,7 @@ static void undo() {
     undo_buffer.pop_back();
 
     auto area = el->apply(game_data.maps[selectedMap]);
-    updateRender();
+    updateGeometry = true;
 
     // select region that has been undone. only trigger change if actually moved
     mode1_layer = area.first.z;
@@ -248,7 +244,7 @@ static void redo() {
     redo_buffer.pop_back();
 
     auto area = el->apply(game_data.maps[selectedMap]);
-    updateRender();
+    updateGeometry = true;
 
     // selct region that has been redone. only trigger change if actually moved
     mode1_layer = area.first.z;
@@ -272,13 +268,13 @@ static void load_data() {
                 vptr[i] = 0;
             }
         }
-        render_data->atlas.Load(tex);
+        render_data->textures.atlas.Load(tex);
     }
 
-    render_data->bunny_tex.Load(Image(game_data.get_asset(30)));
-    render_data->time_capsule_tex.Load(Image(game_data.get_asset(277)));
+    render_data->textures.bunny.Load(Image(game_data.get_asset(30)));
+    render_data->textures.time_capsule.Load(Image(game_data.get_asset(277)));
 
-    auto& bg_tex = render_data->bg_tex;
+    auto& bg_tex = render_data->textures.background;
     bg_tex.Bind();
 
     bg_tex.LoadSubImage(320 * 0, 180 * 0, game_data.get_asset(11)); // 13
@@ -303,7 +299,7 @@ static void load_data() {
     undo_buffer.clear();
     redo_buffer.clear();
 
-    updateRender();
+    updateGeometry = true;
 }
 
 static bool load_game(const std::string& path) {
@@ -595,7 +591,7 @@ static void randomize() {
         map.setTile(0, loc.x, loc.y, item);
     }
 
-    updateRender();
+    updateGeometry = true;
 }
 
 class {
@@ -830,13 +826,8 @@ void full_map_screenshot() {
     auto& map = game_data.maps[selectedMap];
     auto size = glm::ivec2(map.size.x, map.size.y) * room_size * 8;
 
-    glViewport(0, 0, size.x, size.y);
-
     Textured_Framebuffer fb(size.x, size.y);
     fb.Bind();
-
-    glClearColor(0, 0, 0, 0);
-    glClear(GL_COLOR_BUFFER_BIT);
 
     glm::mat4 MVP = glm::ortho<float>(0, size.x, 0, size.y, 0.0f, 100.0f) *
                     glm::lookAt(
@@ -844,32 +835,7 @@ void full_map_screenshot() {
                         glm::vec3(map.offset * room_size * 8, 0),
                         glm::vec3(0, 1, 0));
 
-    render_data->textured_shader.Use();
-    render_data->textured_shader.setMat4("MVP", MVP);
-
-    if(render_data->show_bg_tex) { // draw background textures
-        render_data->textured_shader.setVec4("color", render_data->bg_tex_color);
-        render_data->bg_tex.Bind();
-        render_data->bg_text.Draw();
-    }
-
-    if(render_data->show_bg) { // draw background tiles
-        render_data->atlas.Bind();
-        render_data->textured_shader.setVec4("color", render_data->bg_color);
-        render_data->bg_tiles.Draw();
-    }
-
-    render_data->bunny_tex.Bind();
-    render_data->bunny.Draw();
-
-    render_data->time_capsule_tex.Bind();
-    render_data->time_capsule.Draw();
-
-    if(render_data->show_fg) { // draw foreground tiles
-        render_data->atlas.Bind();
-        render_data->textured_shader.setVec4("color", render_data->fg_color);
-        render_data->fg_tiles.Draw();
-    }
+    doRender(true, game_data, selectedMap, MVP, &fb);
 
     Image img(size.x, size.y);
     fb.tex.Bind();
@@ -945,7 +911,7 @@ static ImGuiID DockSpaceOverViewport() {
 
                         undo_buffer.clear();
                         redo_buffer.clear();
-                        updateRender();
+                        updateGeometry = true;
                     } catch(std::exception& e) {
                         error_dialog.push(e.what());
                     }
@@ -963,21 +929,30 @@ static ImGuiID DockSpaceOverViewport() {
             if(ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
                 undo_buffer.clear();
                 redo_buffer.clear();
-                updateRender();
+                updateGeometry = true;
             }
 
-            ImGui::Checkbox("Foreground Tiles", &render_data->show_fg);
+            ImGui::MenuItem("Foreground Tiles", nullptr, &render_data->show_fg);
             ImGui::ColorEdit4("fg tile color", &render_data->fg_color.r);
-            ImGui::Checkbox("Background Tiles", &render_data->show_bg);
+            ImGui::MenuItem("Background Tiles", nullptr, &render_data->show_bg);
             ImGui::ColorEdit4("bg tile color", &render_data->bg_color.r);
-            ImGui::Checkbox("Background Texture", &render_data->show_bg_tex);
+            ImGui::MenuItem("Background Texture", nullptr, &render_data->show_bg_tex);
             ImGui::ColorEdit4("bg Texture color", &render_data->bg_tex_color.r);
-            ImGui::Checkbox("Show Room Grid", &render_data->room_grid);
-            ImGui::Checkbox("Show Water Level", &render_data->show_water);
-            if(ImGui::Checkbox("Accurate vines", &render_data->accurate_vines)) {
-                updateRender();
+            ImGui::MenuItem("Show Room Grid", nullptr, &render_data->room_grid);
+            ImGui::MenuItem("Show Water Level", nullptr, &render_data->show_water);
+            if(ImGui::MenuItem("Accurate vines", nullptr, &render_data->accurate_vines)) {
+                updateGeometry = true;
             }
-            ImGui::Checkbox("Show Sprite Composition", &render_data->sprite_composition);
+            ImGui::MenuItem("Show Sprite Composition", nullptr, & render_data->sprite_composition);
+            if(ImGui::MenuItem("InGame Rendering", "Ctrl+R", &render_data->accurate_render)) {
+                updateGeometry = true;
+            }
+            if(ImGui::BeginItemTooltip()) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+                ImGui::TextUnformatted("Experimental feature");
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
 
             ImGui::EndMenu();
         }
@@ -1133,7 +1108,7 @@ static void handle_input() {
             }
             if(GetKey(ImGuiKey_Delete)) {
                 selection_handler.erase();
-                updateRender();
+                updateGeometry = true;
             }
             if(GetKey(ImGuiMod_Ctrl)) {
                 if(GetKeyDown(ImGuiKey_C)) clipboard.copy(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
@@ -1141,7 +1116,7 @@ static void handle_input() {
                     selection_handler.apply();
                     clipboard.cut(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
                     push_undo(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
-                    updateRender();
+                    updateGeometry = true;
                 }
             }
             selection_handler.move(arrow_key_dir());
@@ -1151,7 +1126,7 @@ static void handle_input() {
             selection_handler.start_from_paste(mouse_world_pos, clipboard);
 
             // selection_handler will push undo data once position is finalized
-            updateRender();
+            updateGeometry = true;
         }
 
         if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
@@ -1170,6 +1145,10 @@ static void handle_input() {
     }
 
     if(GetKey(ImGuiKey_ModCtrl)) {
+        if(GetKeyDown(ImGuiKey_R)) {
+            render_data->accurate_render = !render_data->accurate_render;
+            updateGeometry = true;
+        }
         if(GetKey(ImGuiKey_ModShift)) {
             if(GetKeyDown(ImGuiKey_S)) exe_exporter.export_explicit();
             if(GetKeyDown(ImGuiKey_E)) map_exporter.export_explicit();
@@ -1248,22 +1227,22 @@ static void DrawPreviewWindow() {
 
                 ImGui::BeginDisabled(room->lighting_index >= game_data.ambient.size());
 
-                ColorEdit4("ambient light", amb.ambient_light);
+                ColorEdit4("ambient light", amb.ambient_light_color);
                 ImGui::SameLine();
                 HelpMarker("Alpha channel is unused");
 
-                ColorEdit4("fg ambient multi", amb.fg_ambient_multi);
+                ColorEdit4("fg ambient light", amb.fg_ambient_light_color);
                 ImGui::SameLine();
                 HelpMarker("Alpha channel is unused");
 
-                ColorEdit4("bg ambient multi", amb.bg_ambient_multi);
+                ColorEdit4("bg ambient light", amb.bg_ambient_light_color);
                 ImGui::SameLine();
                 HelpMarker("Alpha channel is unused");
 
-                ColorEdit4("lamp intensity", amb.light_intensity);
-                ImGui::DragFloat3("color dividers", &amb.dividers.x);
-                ImGui::DragFloat("color saturation", &amb.saturation);
-                ImGui::DragFloat("bg texture light multi", &amb.bg_tex_light_multi);
+                ColorEdit4("fog color", amb.fog_color);
+                ImGui::DragFloat3("color gain", &amb.color_gain.x);
+                ImGui::DragFloat("color saturation", &amb.color_saturation);
+                ImGui::DragFloat("far background reflectivity", &amb.far_background_reflectivity);
                 ImGui::EndDisabled();
 
                 if(room->lighting_index < game_data.ambient.size())
@@ -1307,7 +1286,7 @@ static void DrawPreviewWindow() {
 
                     if(flags != tile.flags) {
                         room->tiles[tile_layer][tp.y][tp.x].flags = flags;
-                        updateRender();
+                        updateGeometry = true;
                     }
 
                     ImGui::EndTable();
@@ -1325,7 +1304,7 @@ static void DrawPreviewWindow() {
                 should_update |= DrawUvFlags(uv);
                 should_update |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
                 should_update |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
-                if(should_update) updateRender();
+                if(should_update) updateGeometry = true;
                 ImGui::EndDisabled();
             }
         }
@@ -1386,7 +1365,7 @@ b/g to move to background layer.");
                 if(tile != mode1_placing) {
                     push_undo(std::make_unique<SingleChange>(glm::ivec3(mouse_world_pos, mode1_layer), tile));
                     tile_layer[tp.y][tp.x] = mode1_placing;
-                    updateRender();
+                    updateGeometry = true;
                 }
             }
         }
@@ -1645,6 +1624,7 @@ int runViewer() {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     render_data = std::make_unique<RenderData>();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 #pragma endregion
 
@@ -1688,65 +1668,27 @@ int runViewer() {
 
         // skip rendering if no data is loaded
         if(game_data.loaded) {
-            bool should_update = false;
-
             exe_exporter.draw_popup();
             replacer.draw_popup();
 
             search_window.draw(game_data, [](int map, const glm::ivec2 pos) {
                 if(map != selectedMap) {
                     selectedMap = map;
-                    updateRender();
+                    updateGeometry = true;
                 }
                 // center of screen
                 camera.position = -(pos * 8 + 4);
             });
             tile_list.draw(game_data, mode1_placing);
-            tile_viewer.draw(game_data, should_update);
+            tile_viewer.draw(game_data, updateGeometry);
             DrawPreviewWindow();
-
-            if(should_update)
-                updateRender();
 
             draw_overlay();
             draw_water_level();
             search_window.draw_overlay(game_data, selectedMap, camera.scale);
 
-            glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-            glClear(GL_COLOR_BUFFER_BIT);
-
-            render_data->textured_shader.Use();
-            render_data->textured_shader.setMat4("MVP", MVP);
-
-            if(render_data->show_bg_tex) { // draw background textures
-                render_data->textured_shader.setVec4("color", render_data->bg_tex_color);
-                render_data->bg_tex.Bind();
-                render_data->bg_text.Draw();
-            }
-
-            if(render_data->show_bg) { // draw background tiles
-                render_data->atlas.Bind();
-                render_data->textured_shader.setVec4("color", render_data->bg_color);
-                render_data->bg_tiles.Draw();
-            }
-
-            render_data->bunny_tex.Bind();
-            render_data->bunny.Draw();
-
-            render_data->time_capsule_tex.Bind();
-            render_data->time_capsule.Draw();
-
-            if(render_data->show_fg) { // draw foreground tiles
-                render_data->atlas.Bind();
-                render_data->textured_shader.setVec4("color", render_data->fg_color);
-                render_data->fg_tiles.Draw();
-            }
-
-            // draw overlay (selection, water level)
-            render_data->flat_shader.Use();
-            render_data->flat_shader.setMat4("MVP", MVP);
-            render_data->overlay.Buffer();
-            render_data->overlay.Draw();
+            doRender(updateGeometry, game_data, selectedMap, MVP);
+            updateGeometry = false;
         } else {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
