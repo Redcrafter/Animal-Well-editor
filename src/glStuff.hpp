@@ -9,6 +9,7 @@
 
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(resources);
+CMRC_DECLARE(font);
 
 #include "image.hpp"
 #include "windows/errors.hpp"

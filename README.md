@@ -8,26 +8,15 @@ Map editor for the Game Animal Well
 ### Windows
 
 ```sh
-git clone --recursive https://github.com/Redcrafter/Animal-Well-editor.git
-
-git submodule init
-git submodule update
-
-mkdir build
-cd build
-cmake ../
+git clone https://github.com/Redcrafter/Animal-Well-editor.git
+cmake . -B build/
+cmake --build build/ --config Release
 ```
 
 ### Linux
 ```sh
 sudo apt install libgtk2.0-dev
-git clone --recursive https://github.com/Redcrafter/Animal-Well-editor.git
-
-git submodule init
-git submodule update
-
-mkdir build
-cd build
-cmake ../
-make
+git clone https://github.com/Redcrafter/Animal-Well-editor.git
+cmake -DCMAKE_BUILD_TYPE=Release . -B build/
+cmake --build build/
 ```

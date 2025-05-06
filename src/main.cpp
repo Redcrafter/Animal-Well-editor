@@ -1537,8 +1537,8 @@ static bool UpdateUIScaling() {
     if(xscale == 1.0f) {
         io.Fonts->AddFontDefault();
     } else {
-        auto fs = cmrc::resources::get_filesystem();
-        auto dat = fs.open("lib/proggyfonts/ProggyVector/ProggyVector-Regular.ttf");
+        auto fs = cmrc::font::get_filesystem();
+        auto dat = fs.open("ProggyVector-Regular.ttf");
 
         ImFontConfig config {};
         config.FontDataOwnedByAtlas = false;
