@@ -14,12 +14,14 @@ enum class BufferType {
 struct Shaders {
     ShaderProgram flat     {"src/shaders/mvp.vs", "src/shaders/flat.fs"};
     ShaderProgram textured {"src/shaders/mvp.vs", "src/shaders/textured.fs"};
+    ShaderProgram copy     {"src/shaders/raw.vs", "src/shaders/textured.fs"};
 
     ShaderProgram visibility      {"src/shaders/raw.vs", "src/shaders/visibility.fs"};
     ShaderProgram light           {"src/shaders/raw.vs", "src/shaders/light_blur.fs"};
     ShaderProgram blur            {"src/shaders/raw.vs", "src/shaders/blur.fs"};
     ShaderProgram visibility_mask {"src/shaders/raw.vs", "src/shaders/visibility_mask.fs"};
     ShaderProgram water           {"src/shaders/mvp.vs", "src/shaders/water.fs"};
+    ShaderProgram waterfalls      {"src/shaders/raw.vs", "src/shaders/waterfalls.fs"};
 
     ShaderProgram merge_fg     {"src/shaders/raw.vs", "src/shaders/merge.fs"};
     ShaderProgram merge_bg     {"src/shaders/raw.vs", "src/shaders/merge_bg.fs"};
@@ -36,13 +38,26 @@ struct Textures {
     Texture time_capsule;
 };
 
+struct Waterfall {
+    glm::ivec2 pos, size;
+    int layer;
+};
+
+struct RoomBuffers {
+    // Mesh mesh;
+    std::vector<glm::ivec3> lights;
+    std::vector<Waterfall> waterfalls;
+    // Mesh waterfall_mesh;
+};
+
 struct RenderData {
     Shaders shaders;
     Textures textures;
 
-    Mesh fg_tiles, bg_tiles, bg_text, overlay;
+    Mesh fg_tiles, bg_tiles, bg_text, bg_normals, overlay;
     Mesh bunny;
     Mesh time_capsule;
+    Mesh waterfall_mesh;
 
     glm::vec4 bg_color {0.8, 0.8, 0.8, 1};
     glm::vec4 fg_color {1, 1, 1, 1};
@@ -72,12 +87,16 @@ struct RenderData {
     Textured_Framebuffer fg_buffer {0, 0};
     Textured_Framebuffer mg_buffer {0, 0};
     Textured_Framebuffer bg_buffer {0, 0};
+    Textured_Framebuffer bg_normals_buffer {0, 0};
     Textured_Framebuffer bg_tex_buffer {0, 0};
 
     Textured_Framebuffer visibility_buffer {0, 0};
 
     Textured_Framebuffer light_buffer {0, 0};
     Textured_Framebuffer temp_buffer {0, 0};
+    Textured_Framebuffer room_temp_buffer {320, 176};
+
+    std::vector<RoomBuffers> room_buffers;
 
     RenderData() = default;
     RenderData(const RenderData&) = delete;

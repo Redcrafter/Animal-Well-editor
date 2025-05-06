@@ -269,6 +269,9 @@ struct ShaderProgram {
     void setVec4(const char* name, const glm::vec4& vec) {
         glUniform4f(glGetUniformLocation(ID, name), vec.x, vec.y, vec.z, vec.w);
     }
+    void setVec4v(const char* name, std::span<glm::vec4> vals) {
+        glUniform4fv(glGetUniformLocation(ID, name), vals.size(), &vals[0].x);
+    }
 };
 
 struct Vertex {

@@ -70,6 +70,20 @@ struct Room {
 
         return yellow_sources;
     }
+
+    MapTile& operator()(int layer, int x, int y) {
+        assert(layer == 0 || layer == 1);
+        assert(x >= 0 && x < 40);
+        assert(y >= 0 && y < 22);
+        return tiles[layer][y][x];
+    }
+
+    const MapTile& operator()(int layer, int x, int y) const {
+        assert(layer == 0 || layer == 1);
+        assert(x >= 0 && x < 40);
+        assert(y >= 0 && y < 22);
+        return tiles[layer][y][x];
+    }
 };
 
 static_assert(sizeof(Room) == 0x1b88);

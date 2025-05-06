@@ -103,9 +103,9 @@ static bool TileButton(uint16_t tile, const GameData& game_data, int box_size, i
 
         if(uv.flags & (contiguous | self_contiguous)) {
             // draw tile without neighbours
-            window->DrawList->AddImage((ImTextureID*)tex.id.value, p1, p2, uv0 + ImVec2(0, 0) / atlas_size, uv1 + ImVec2(16, 16) / atlas_size, IM_COL32_WHITE);
+            window->DrawList->AddImage((ImTextureID)tex.id.value, p1, p2, uv0 + ImVec2(0, 0) / atlas_size, uv1 + ImVec2(16, 16) / atlas_size, IM_COL32_WHITE);
         } else {
-            window->DrawList->AddImage((ImTextureID*)tex.id.value, p1, p2, uv0, uv1, IM_COL32_WHITE);
+            window->DrawList->AddImage((ImTextureID)tex.id.value, p1, p2, uv0, uv1, IM_COL32_WHITE);
         }
     }
 

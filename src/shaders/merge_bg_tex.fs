@@ -3,28 +3,37 @@
 in vec2 TexCoords;
 out vec4 FragColor;
 
+uniform vec4 lights[16];
+
 uniform vec4 ambientLightColor;
 uniform vec4 fogColor;
-uniform vec2 viewportSize;
 uniform float time;
 
+uniform vec2 viewportOffset;
+uniform vec2 viewportScale;
+
 uniform sampler2D tex; // background
+uniform sampler2D foregroundLight;
 uniform sampler2D visibility;
-// uniform sampler2D foregroundLight;
 uniform sampler2D seperatedLights;
 
+const vec2 viewportSize = vec2(320, 176);
+const float farBackgroundReflectivity = 1;
+
 void main() {
-  float farBackgroundReflectivity = 1;
-  vec4 r1,r2,r3,r6,r7;
+  vec4 r0,r1,r2,r3,r6,r7;
 
-  vec2 v0 = TexCoords * viewportSize;
 
-  vec4 r0 = texture(tex, TexCoords);
-  r0.xyz += fogColor.w * (fogColor.xyz - r0.xyz);
+  vec2 v0 = mod(gl_FragCoord.xy, viewportSize);
+  vec2 v2 = v0 / viewportSize;
 
-  // r1.xyz = (farBackgroundReflectivity * texture(foregroundLight, TexCoords).xyz * vec3(0.25,0.25,0.25) + ambientLightColor.xyz) * r0.xyz;
-  r1.xyz = ambientLightColor.xyz * r0.xyz;
-
+  r0.xyzw = texture(tex, v2.xy * viewportScale + viewportOffset).xyzw;
+  r1.xyz = fogColor.xyz + -r0.xyz;
+  r0.xyz = fogColor.www * r1.xyz + r0.xyz;
+  r1.xyz = texture(foregroundLight, v2.xy * viewportScale + viewportOffset).xyz;
+  r1.xyz = farBackgroundReflectivity * r1.xyz;
+  r1.xyz = r1.xyz * vec3(0.25,0.25,0.25) + ambientLightColor.xyz;
+  r1.xyz = r1.xyz * r0.xyz;
   r2.x = 0.5 * time;
   r2.yw = vec2(0,1000);
   r2.xy = v0.xy + r2.xy;
@@ -128,7 +137,7 @@ void main() {
   r3.xyz = r6.xyz + -r3.xyz;
   r6.xyz = r7.xyz * r7.xyz;
   r6.xyz = r3.xyz * r3.xyz + r6.xyz;
-  r6.xyz = -r6.xyz * vec3(0.853734732,0.853734732,0.853734732) + vec3(1.79284286,1.79284286,1.79284286);
+  r6.xyz = 1.79284286 - r6.xyz * 0.853734732;
   r5.xyz = r6.xyz * r5.xyz;
   r1.w = r7.x * r2.w;
   r6.x = r3.x * r2.z + r1.w;
@@ -137,29 +146,25 @@ void main() {
   r2.y = dot(r5.xyz, r6.xyz);
   r0.xyz = farBackgroundReflectivity * r0.xyz;
   r3.xyz = r1.xyz;
+  r2.zw = r2.xy * 0.65 + v2.xy;
 
-  r2.zw = r2.xy * vec2(0.65,0.65) + TexCoords;
-  r2.xy = r2.xy * vec2(130, 130);
-
-  /*for(int i = 0; i < 16; i++) {
+  for(int i = 0; i < 16; i++) {
     vec4 light = lights[i];
 
     if (0 < light.z) {
       r4.xy = light.xy - v0.xy;
 
-      if (sqrt(dot(r4.xy, r4.xy)) < light.z) {
-        r4.xy = vec2(1, 1) - texture(visibility, (light.xy + r2.xy - r4.xy * vec2(0.65,0.65)) / viewportSize).yw;
+      if (length(r4.xy) < light.z) {
+        // #todo use real seperated lights
+        // r5.xyz = texture(seperatedLights, ((r4.xy / viewportSize.xy) * 0.05 + r2.zw + vec2(i & 3, i >> 2)) * 0.25).xyz;
+        r5.xyz = texture(seperatedLights, ((r4.xy / viewportSize) * 0.05 + r2.zw) * viewportScale + viewportOffset).xyz;
+        r4.xy = 1 - texture(visibility, ((r2.xy * 130 + (light.xy - r4.xy * 0.65)) / viewportSize) * viewportScale + viewportOffset).yw;
 
-        if((r4.x * r4.y) >= 0.7) {
-            r3.xyz += r0.xyz * texture(seperatedLights, 0.25 * ((r4.xy / viewportSize) * vec2(0.05,0.05) + r2.zw + vec2(i & 3, i >> 2))).xyz;
+        if(r4.x * r4.y >= 0.7) {
+          r3.xyz += r5.xyz * r0.xyz;
         }
       }
     }
-  }*/
-  
-  vec4 vis = texture(visibility, TexCoords);
-  if(vis.y * vis.w >= 0.7) {
-      r3.xyz += texture(seperatedLights, TexCoords).xyz;
   }
 
   FragColor = vec4(r3.xyz, r0.w);

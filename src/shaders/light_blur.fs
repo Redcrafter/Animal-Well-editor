@@ -32,7 +32,6 @@ void main() {
             vec4 r5 = texture(tex, vec2(j, i) * center + TexCoords);
             if(r5.xyz != vec3(0.0, 0.0, 0.0)) {
                 color = max(r5, color);
-                // sum += 5 - abs(i) - abs(j);
                 sum += x0[i * 5 + 10 + j + 2];
             }
         }

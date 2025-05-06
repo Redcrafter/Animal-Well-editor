@@ -1,9 +1,9 @@
 #include "geometry.hpp"
-#include "renderData.hpp"
 #include "pipeline.hpp"
+#include "renderData.hpp"
 
-#include <imgui.h>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <imgui.h>
 #include <numbers>
 
 constexpr bool isVine(uint16_t tile_id) {
@@ -68,6 +68,30 @@ static void renderVine(int x, int y, int layer, const uv_data& uv, const Room& r
             render_data->add_face(t, t + size, uv_, uv_ + size);
         }
     }
+}
+
+void renderWaterfall(int x, int y, int layer, const Room& room, RoomBuffers& buf) {
+    if(x > 0 && room(layer, x - 1, y).tile_id == 0x156) { // is not the first tile
+        return;
+    }
+
+    int width = 1;
+    while(x + width < 40 && room(layer, x + width, y).tile_id == 0x156) {
+        width++;
+    }
+
+    int height = (24 - y) * 8; // down to water level or screen edge
+    if(room.waterLevel != 180) {
+        height = room.waterLevel - y * 8;
+    }
+
+    x *= 8;
+    y *= 8;
+    if(y == 0) {
+        y -= 2; // if at top cut off top part
+    }
+
+    buf.waterfalls.push_back({{x, y}, {width * 8, height}, layer});
 }
 
 static void render_tile(MapTile tile, glm::ivec2 tile_pos, int layer, const Map& map, const GameData& game_data, uint32_t color = IM_COL32_WHITE) {
@@ -150,6 +174,23 @@ static void render_tile(MapTile tile, glm::ivec2 tile_pos, int layer, const Map&
     mesh.data.emplace_back(world_pos + glm::vec2(uv.size.x, 0), (uvp + right) / atlasSize, color);   // tr
     mesh.data.emplace_back(world_pos + glm::vec2(uv.size), (uvp + down + right) / atlasSize, color); // br
     mesh.data.emplace_back(world_pos + glm::vec2(0, uv.size.y), (uvp + down) / atlasSize, color);    // bl
+
+    if(layer == 1 && uv.flags & has_normals) {
+        auto& mesh = render_data->bg_normals;
+
+        auto off = glm::vec2(0, uv.size.y);
+        if(uv.flags & (contiguous | self_contiguous)) {
+            off.y *= 4;
+        }
+
+        mesh.data.emplace_back(world_pos, (uvp + off) / atlasSize, color); // tl
+        mesh.data.emplace_back(world_pos + glm::vec2(uv.size.x, 0), (uvp + right + off) / atlasSize, color); // tr
+        mesh.data.emplace_back(world_pos + glm::vec2(0, uv.size.y), (uvp + down + off) / atlasSize, color);  // bl
+
+        mesh.data.emplace_back(world_pos + glm::vec2(uv.size.x, 0), (uvp + right + off) / atlasSize, color);   // tr
+        mesh.data.emplace_back(world_pos + glm::vec2(uv.size), (uvp + down + right + off) / atlasSize, color); // br
+        mesh.data.emplace_back(world_pos + glm::vec2(0, uv.size.y), (uvp + down + off) / atlasSize, color);    // bl
+    }
 }
 
 static void render_lamp(MapTile tile, glm::ivec2 pos, int layer, const Map& map, const GameData& game_data) {
@@ -182,10 +223,15 @@ void renderMap(const Map& map, const GameData& game_data) {
     rd.fg_tiles.clear();
     rd.mg_tiles.clear();
     rd.bg_tiles.clear();
+    rd.bg_normals.clear();
     rd.bunny.clear();
     rd.time_capsule.clear();
 
-    for(auto&& room : map.rooms) {
+    for(size_t i = 0; i < map.rooms.size(); i++) {
+        auto& room = map.rooms[i];
+        auto& buff = rd.room_buffers[i];
+        buff.waterfalls.clear();
+
         const int yellow_sources = room.count_yellow();
 
         for(int layer = 0; layer < 2; layer++) {
@@ -205,6 +251,9 @@ void renderMap(const Map& map, const GameData& game_data) {
                         rd.pop_type();
                         continue;
                     }
+                    if(tile.tile_id == 0x156) {
+                        renderWaterfall(x2, y2, layer, room, buff);
+                    }
 
                     auto pos = glm::ivec2(x2 + room.x * 40, y2 + room.y * 22);
                     if(isLamp(tile.tile_id)) {
@@ -217,9 +266,20 @@ void renderMap(const Map& map, const GameData& game_data) {
                     }
 
                     if(game_data.sprites.contains(tile.tile_id)) {
+                        auto& sprite = game_data.sprites.at(tile.tile_id);
+
                         render_sprite_custom([&](glm::ivec2 pos_, glm::u16vec2 size, glm::ivec2 uv_pos, glm::ivec2 uv_size) {
                             pos_ += pos * 8;
                             render_data->add_face(pos_, pos_ + glm::ivec2(size), uv_pos, uv_pos + uv_size);
+
+                            if(layer == 1) {
+                                auto& mesh = render_data->bg_normals;
+
+                                auto& tex = render_data->textures.atlas;
+                                glm::vec2 tex_size {tex.width, tex.height};
+
+                                mesh.AddRectFilled(pos_, pos_ + glm::ivec2(size), glm::vec2(uv_pos) / tex_size, glm::vec2(uv_pos + uv_size) / tex_size, IM_COL32_WHITE);
+                            }
                         }, tile, game_data, yellow_sources);
                     } else {
                         render_tile(tile, pos, layer, map, game_data);
@@ -233,6 +293,7 @@ void renderMap(const Map& map, const GameData& game_data) {
     rd.fg_tiles.Buffer();
     rd.mg_tiles.Buffer();
     rd.bg_tiles.Buffer();
+    rd.bg_normals.Buffer();
     rd.bunny.Buffer();
     rd.time_capsule.Buffer();
 }
@@ -401,7 +462,11 @@ void renderLights(const Map& map, std::span<const uv_data> uvs) {
         mesh.data.emplace_back(clip[3], zero, IM_COL32_BLACK);
     };
 
-    for(auto&& room : map.rooms) {
+    for(size_t i = 0; i < map.rooms.size(); i++) {
+        auto&& room = map.rooms[i];
+        auto& buff = render_data->room_buffers[i];
+        buff.lights.clear();
+
         for(int layer = 0; layer < 2; layer++) {
             for(int y = 0; y < 22; y++) {
                 for(int x = 0; x < 40; x++) {
@@ -438,6 +503,7 @@ void renderLights(const Map& map, std::span<const uv_data> uvs) {
 
                     mesh.clear();
                     makeLight(mesh, color, radius);
+                    buff.lights.push_back(glm::vec4(x * 8 + 4, y * 8 + 4, (radius + 1) * 8, 0));
 
                     auto pos = glm::ivec2(x + room.x * 40, y + room.y * 22);
                     for(int y1 = -6; y1 <= 6; ++y1) {
@@ -474,14 +540,13 @@ void renderLights(const Map& map, std::span<const uv_data> uvs) {
                     render_data->small_light_buffer.Bind();
                     glViewport(0, 0, 128, 128);
 
-                    glClearColor(0,0,0,0);
+                    glClearColor(0, 0, 0, 0);
                     glClear(GL_COLOR_BUFFER_BIT);
 
                     render_data->shaders.flat.Use();
                     glDisable(GL_BLEND);
                     mesh.Draw();
                     glEnable(GL_BLEND);
-
 
                     lb.Bind();
                     glViewport(0, 0, lb.tex.width, lb.tex.height);

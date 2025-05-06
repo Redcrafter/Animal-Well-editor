@@ -6,8 +6,28 @@
 #include <GLFW/glfw3.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <map>
+#include <chrono>
 
 constexpr auto room_size = glm::ivec2(40, 22);
+std::map<const char*, float> times;
+
+void drawTimes() {
+    if(ImGui::Begin("Render times")) {
+        for(auto&& [name, time] : times) {
+            ImGui::Text("%s: %fms", name, time);
+        }
+    }
+    ImGui::End();
+}
+
+template<typename F>
+void benchmark(const char* name, F&& f) {
+    auto start = std::chrono::high_resolution_clock::now();
+    f();
+    auto end = std::chrono::high_resolution_clock::now();
+    times[name] = (end - start).count() / 1000000.0f;
+}
 
 void RenderQuad(glm::vec2 min, glm::vec2 max, glm::vec2 uv_min, glm::vec2 uv_max) {
     static std::unique_ptr<VAO> quadVAO = nullptr;
@@ -47,18 +67,7 @@ void RenderQuad(glm::vec2 min, glm::vec2 max, glm::vec2 uv_min, glm::vec2 uv_max
 void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
     static float time = 0;
 
-#if DEBUG
     auto start = std::chrono::high_resolution_clock::now();
-    auto start1 = start;
-    // auto end = start;
-    auto logTime = [&](const char* name) {
-        auto end = std::chrono::high_resolution_clock::now();
-        ImGui::DebugLog("%s: %fms\n", name, (end - start).count() / 1000000.0f);
-        start = end;
-    };
-#else
-    auto logTime = [&](const char* name) {};
-#endif
 
     auto& map = game_data.maps[selectedMap];
     auto size = glm::ivec2(map.size.x, map.size.y) * room_size * 8;
@@ -75,6 +84,7 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
     rd.fg_buffer.resize(size.x, size.y);
     rd.mg_buffer.resize(size.x, size.y);
     rd.bg_buffer.resize(size.x, size.y);
+    rd.bg_normals_buffer.resize(size.x, size.y);
     rd.bg_tex_buffer.resize(size.x, size.y);
 
     glm::mat4 MVP = glm::ortho<float>(0, size.x, 0, size.y, 0.0f, 100.0f) *
@@ -90,7 +100,7 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
     shaders.flat.Use();
     shaders.flat.setMat4("MVP", MVP);
 
-    { // foreground
+    benchmark("foreground", [&]() {
         rd.fg_buffer.Bind();
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -100,10 +110,9 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             rd.textures.atlas.Bind();
             rd.fg_tiles.Draw();
         }
-        logTime("foreground");
-    }
+    });
 
-    { // midground
+    benchmark("midground", [&]() {
         rd.mg_buffer.Bind();
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -111,10 +120,9 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
         shaders.textured.Use();
         rd.textures.atlas.Bind();
         rd.mg_tiles.Draw();
-        logTime("midground");
-    }
+    });
 
-    { // background
+    benchmark("background", [&]() {
         rd.bg_buffer.Bind();
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -124,21 +132,31 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             rd.textures.atlas.Bind();
             rd.bg_tiles.Draw();
         }
-        logTime("background");
-    }
+    });
+
+    benchmark("background normals", [&]() {
+        rd.bg_normals_buffer.Bind();
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        if(rd.show_bg) {
+            shaders.textured.Use();
+            rd.textures.atlas.Bind();
+            rd.bg_normals.Draw();
+        }
+    });
 
     { // visibility
         rd.visibility_buffer.Bind();
         glClearColor(1, 1, 1, 1);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        { // visibility depth
+        benchmark("visibility raw", [&]() {
             shaders.flat.Use();
             rd.visibility.Draw();
-        }
-        logTime("visibility raw");
+        });
 
-        { // layer visibility
+        benchmark("visibility merge", [&]() {
             auto& vis = shaders.visibility;
             vis.Use();
 
@@ -160,10 +178,9 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             glEnable(GL_BLEND);
 
             glActiveTexture(GL_TEXTURE0);
-        }
-        logTime("visibility merge");
+        });
 
-        { // blur visibilty
+        benchmark("visibilty blur", [&]() {
             glDisable(GL_BLEND);
             shaders.blur.Use();
 
@@ -178,16 +195,15 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             RenderQuad();
 
             glEnable(GL_BLEND);
-        }
-
-        logTime("visibilty blur");
+        });
     }
 
     if(rerender) { // lights
-        renderLights(map, game_data.uvs);
-        logTime("lights segmented");
+        benchmark("lights segmented", [&]() {
+            renderLights(map, game_data.uvs);
+        });
 
-        { // make lights fuzzy
+        benchmark("lights fuzz", [&]() { // make lights fuzzy
             rd.light_buffer.Bind();
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -196,11 +212,10 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             shaders.light.setVec2("viewportSize", size);
             rd.temp_buffer.tex.Bind();
             RenderQuad();
-        }
-        logTime("lights fuzz");
+        });
     }
 
-    { // background textures
+    benchmark("background", [&]() { // background textures
         rd.bg_tex_buffer.Bind();
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -208,127 +223,222 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
         shaders.textured.Use();
         rd.textures.background.Bind();
         rd.bg_text.Draw();
-        logTime("background textures");
-    }
+        // logTime("background textures");
+    });
 
-    rd.temp_buffer.Bind();
-    glClearColor(0, 0, 0, 0);
-    glClear(GL_COLOR_BUFFER_BIT);
+    std::array<glm::vec4, 16> lights;
 
-    for(auto&& room : map.rooms) {
-        auto ind = room.lighting_index;
-        if(ind < 0 || ind >= game_data.ambient.size()) ind = 0;
-        auto& light = game_data.ambient[ind];
+    benchmark("rooms", [&]() {
+        rd.temp_buffer.Bind();
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
 
-        glm::ivec2 pos = (glm::ivec2(room.x, room.y) - map.offset) * room_size * 8;
-        glViewport(pos.x, pos.y, room_size.x * 8, room_size.y * 8);
+        for(size_t i = 0; i < map.rooms.size(); i++) {
+            auto&& room = map.rooms[i];
+            auto& buff = render_data->room_buffers[i];
 
-        glm::vec2 uv_min = glm::vec2(pos) / glm::vec2(size);
-        glm::vec2 uv_max = glm::vec2(pos + room_size * 8) / glm::vec2(size);
+            lights.fill(glm::vec4(0));
+            for(size_t j = 0; j < 16 && j < buff.lights.size(); j++) {
+                lights[j] = glm::vec4(buff.lights[j], 0);
+            }
 
-        { // background tiles
-            auto& shader = shaders.merge_bg;
-            shader.Use();
+            auto ind = room.lighting_index;
+            if(ind < 0 || ind >= game_data.ambient.size()) ind = 0;
+            auto& light = game_data.ambient[ind];
 
-            shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
-            shader.setVec4("fgAmbientLightColor", glm::vec4(light.fg_ambient_light_color) / 255.0f);
-            shader.setVec4("bgAmbientLightColor", glm::vec4(light.bg_ambient_light_color) / 255.0f);
-            shader.setVec4("fogColor", glm::vec4(light.fog_color) / 255.0f);
+            glm::ivec2 pos = (glm::ivec2(room.x, room.y) - map.offset) * room_size * 8;
+            glViewport(pos.x, pos.y, room_size.x * 8, room_size.y * 8);
 
-            shader.setFloat("midToneBrightness", 0.40);
-            shader.setFloat("shadowBrightness", 0.50);
-            shader.setFloat("time", time);
+            glm::vec2 uv_min = glm::vec2(pos) / glm::vec2(size);
+            glm::vec2 uv_max = glm::vec2(pos + room_size * 8) / glm::vec2(size);
 
-            shader.setVec2("viewportSize", size);
+            { // background tiles
+                auto& shader = shaders.merge_bg;
+                shader.Use();
 
-            shader.setInt("tex", 0);
-            // ms.setInt("lightMask", 1);
-            shader.setInt("visibility", 2);
-            // ms.setInt("foregroundLight", 3);
-            // ms.setInt("backgroundNormals", 4);
-            shader.setInt("seperatedLights", 5);
+                shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
+                shader.setVec4("fgAmbientLightColor", glm::vec4(light.fg_ambient_light_color) / 255.0f);
+                shader.setVec4("bgAmbientLightColor", glm::vec4(light.bg_ambient_light_color) / 255.0f);
+                shader.setVec4("fogColor", glm::vec4(light.fog_color) / 255.0f);
 
-            glActiveTexture(GL_TEXTURE0);
-            rd.bg_buffer.tex.Bind();
-            glActiveTexture(GL_TEXTURE2);
-            rd.visibility_buffer.tex.Bind();
-            glActiveTexture(GL_TEXTURE5);
-            rd.light_buffer.tex.Bind();
+                shader.setFloat("midToneBrightness", 0.40);
+                shader.setFloat("shadowBrightness", 0.50);
+                shader.setFloat("time", time);
 
-            RenderQuad({-1, -1}, {1, 1}, uv_min, uv_max);
+                // shader.setVec2("viewportSize_", size);
+                shader.setVec2("viewportOffset", uv_min);
+                shader.setVec2("viewportScale", 1.0f / glm::vec2(map.size));
 
-            glActiveTexture(GL_TEXTURE0);
+                shader.setInt("tex", 0);
+                shader.setInt("lightMask", 1);
+                shader.setInt("visibility", 2);
+                shader.setInt("foregroundLight", 3);
+                shader.setInt("backgroundNormals", 4);
+                shader.setInt("seperatedLights", 5);
+
+                shader.setVec4v("lights", lights);
+
+                glActiveTexture(GL_TEXTURE0);
+                rd.bg_buffer.tex.Bind();
+
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, 0);
+
+                glActiveTexture(GL_TEXTURE2);
+                rd.visibility_buffer.tex.Bind();
+
+                glActiveTexture(GL_TEXTURE3);
+                glBindTexture(GL_TEXTURE_2D, 0);
+
+                glActiveTexture(GL_TEXTURE4);
+                rd.bg_normals_buffer.tex.Bind();
+
+                glActiveTexture(GL_TEXTURE5);
+                rd.light_buffer.tex.Bind();
+
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+                glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+                RenderQuad();
+            }
+
+            { // background texture
+                rd.temp_buffer.Bind();
+
+                auto& shader = shaders.merge_bg_tex;
+                shader.Use();
+                shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
+                shader.setVec4("fogColor", glm::vec4(light.fog_color) / 255.0f);
+                shader.setFloat("time", time);
+                shader.setVec4v("lights", lights);
+
+                shader.setVec2("viewportOffset", uv_min);
+                shader.setVec2("viewportScale", 1.0f / glm::vec2(map.size));
+
+                shader.setInt("tex", 0);
+                shader.setInt("foregroundLight", 1);
+                shader.setInt("visibility", 2);
+                shader.setInt("seperatedLights", 3);
+
+                glActiveTexture(GL_TEXTURE0);
+                rd.bg_tex_buffer.tex.Bind();
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glActiveTexture(GL_TEXTURE2);
+                rd.visibility_buffer.tex.Bind();
+                glActiveTexture(GL_TEXTURE3);
+                rd.light_buffer.tex.Bind();
+
+                glBlendFuncSeparate(GL_ONE_MINUS_DST_ALPHA, GL_DST_ALPHA, GL_ONE, GL_ONE);
+                glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+                RenderQuad();
+            }
+
+            // waterfalls
+            if(!buff.waterfalls.empty()) {
+                const auto rs = glm::vec2(room_size * 8);
+
+                rd.room_temp_buffer.Bind();
+                glViewport(0, 0, rs.x, rs.y);
+                glClearColor(0, 0, 0, 0);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                rd.waterfall_mesh.clear();
+                for(auto& item : buff.waterfalls) {
+                    auto h1 = ((item.pos.x             ) / rs.x) * 2 - 1;
+                    auto h2 = ((item.pos.x + 2         ) / rs.x) * 2 - 1;
+                    auto h3 = ((item.pos.x + item.size.x - 2) / rs.x) * 2 - 1;
+                    auto h4 = ((item.pos.x + item.size.x) / rs.x) * 2 - 1;
+
+                    auto t = ((item.pos.y              ) / rs.y) * 2 - 1;
+                    auto m = ((item.pos.y + 2          ) / rs.y) * 2 - 1;
+                    auto b = ((item.pos.y + item.size.y) / rs.y) * 2 - 1;
+
+                    rd.waterfall_mesh.AddRectFilled({h1, t}, {h2, m}, {0.00, 0}, {0.25, 0.25}); // tl
+                    rd.waterfall_mesh.AddRectFilled({h2, t}, {h3, m}, {0.25, 0}, {0.75, 0.25}); // tm
+                    rd.waterfall_mesh.AddRectFilled({h3, t}, {h4, m}, {0.75, 0}, {1.00, 0.25}); // tr
+
+                    rd.waterfall_mesh.AddRectFilled({h1, m}, {h2, b}, {0.00, 0.25}, {0.25, 1}); // tl
+                    rd.waterfall_mesh.AddRectFilled({h2, m}, {h3, b}, {0.25, 0.25}, {0.75, 1}); // tm
+                    rd.waterfall_mesh.AddRectFilled({h3, m}, {h4, b}, {0.75, 0.25}, {1.00, 1}); // tr
+                }
+                rd.waterfall_mesh.Buffer();
+
+                auto& shader = shaders.waterfalls;
+                shader.Use();
+                shader.setFloat("time", time);
+
+                shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
+                shader.setVec4("fgAmbientLightColor", glm::vec4(light.fg_ambient_light_color) / 255.0f);
+                shader.setVec2("viewportOffset", uv_min);
+                shader.setVec2("viewportScale", 1.0f / glm::vec2(map.size));
+
+                shader.setInt("lightMask", 0);
+                shader.setInt("foregroundLight", 1);
+                shader.setInt("mainWindow", 2);
+
+                glActiveTexture(GL_TEXTURE0);
+                rd.light_buffer.tex.Bind();
+
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, 0);
+
+                glActiveTexture(GL_TEXTURE2);
+                rd.temp_buffer.tex.Bind();
+
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+                glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+                rd.waterfall_mesh.Draw();
+
+                rd.temp_buffer.Bind();
+
+                shaders.copy.Use();
+                shaders.copy.setVec4("color", glm::vec4(1));
+                glActiveTexture(GL_TEXTURE0);
+                rd.room_temp_buffer.tex.Bind();
+                glViewport(pos.x, pos.y, room_size.x * 8, room_size.y * 8);
+                RenderQuad();
+            }
+
+            { // foreground tiles
+                auto& shader = shaders.merge_fg;
+                shader.Use();
+                shader.setInt("foreground", 0);
+                shader.setInt("lightMask", 1);
+                shader.setInt("foregroundLight", 2);
+                shader.setInt("visibility", 3);
+
+                shader.setFloat("rimLightBrightness", 1);
+                shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
+                shader.setVec4("fgAmbientLightColor", glm::vec4(light.fg_ambient_light_color) / 255.0f);
+
+                glActiveTexture(GL_TEXTURE0);
+                rd.fg_buffer.tex.Bind();
+                glActiveTexture(GL_TEXTURE1);
+                rd.light_buffer.tex.Bind();
+                glActiveTexture(GL_TEXTURE2);
+                // N/A
+                glActiveTexture(GL_TEXTURE3);
+                rd.visibility_buffer.tex.Bind();
+
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+                glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
+                RenderQuad({-1, -1}, {1, 1}, uv_min, uv_max);
+
+                glActiveTexture(GL_TEXTURE0);
+            }
         }
 
-        { // background texture
-            rd.temp_buffer.Bind();
-
-            auto& shader = shaders.merge_bg_tex;
-            shader.Use();
-            shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
-            shader.setVec4("fogColor", glm::vec4(light.fog_color) / 255.0f);
-
-            shader.setVec2("viewportSize", size);
-            shader.setFloat("time", time);
-
-            shader.setInt("tex", 0);
-             // ms.setInt("lightMask", 1);
-            shader.setInt("visibility", 2);
-             // ms.setInt("foregroundLight", 3);
-             // ms.setInt("backgroundNormals", 4);
-            shader.setInt("seperatedLights", 5);
-
-            glActiveTexture(GL_TEXTURE0);
-            rd.bg_tex_buffer.tex.Bind();
-            glActiveTexture(GL_TEXTURE2);
-            rd.visibility_buffer.tex.Bind();
-            glActiveTexture(GL_TEXTURE5);
-            rd.light_buffer.tex.Bind();
-
-            glBlendFuncSeparate(GL_ONE_MINUS_DST_ALPHA, GL_DST_ALPHA, GL_ONE, GL_ONE);
-            glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
-            RenderQuad({-1, -1}, {1, 1}, uv_min, uv_max);
-            glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-            glActiveTexture(GL_TEXTURE0);
-        }
-
-        { // foreground tiles
-            auto& shader = shaders.merge_fg;
-            shader.Use();
-            shader.setInt("foreground", 0);
-            shader.setInt("lightMask", 1);
-            shader.setInt("foregroundLight", 2);
-            shader.setInt("visibility", 3);
-
-            shader.setFloat("rimLightBrightness", 1);
-            shader.setVec4("ambientLightColor", glm::vec4(light.ambient_light_color) / 255.0f);
-            shader.setVec4("fgAmbientLightColor", glm::vec4(light.fg_ambient_light_color) / 255.0f);
-
-            glActiveTexture(GL_TEXTURE0);
-            rd.fg_buffer.tex.Bind();
-            glActiveTexture(GL_TEXTURE1);
-            rd.light_buffer.tex.Bind();
-            glActiveTexture(GL_TEXTURE2);
-            // N/A
-            glActiveTexture(GL_TEXTURE3);
-            rd.visibility_buffer.tex.Bind();
-
-            RenderQuad({-1, -1}, {1, 1}, uv_min, uv_max);
-
-            glActiveTexture(GL_TEXTURE0);
-        }
-    }
-
-    logTime("rooms");
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendEquation(GL_FUNC_ADD);
+    });
 
     glViewport(0, 0, size.x, size.y);
 
-    { // visibility mask
+    benchmark("visbility mask", [&]() { // visibility mask
         auto& shader = shaders.visibility_mask;
         shader.Use();
-        shader.setVec2("viewportSize", size);
+        // shader.setVec2("viewportSize", size);
+        shader.setVec2("viewportScale", 1.0f / glm::vec2(map.size));
         shader.setFloat("shadowBrightness", 0.50);
         shader.setFloat("time", time);
 
@@ -337,19 +447,17 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
         glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE);
         RenderQuad();
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        logTime("visbility mask");
-    }
+    });
 
     { // water reflection
-        { // copy output image
+        benchmark("water copy", [&]() { // copy output image
             rd.bg_buffer.Bind();
             shaders.textured.Use();
             rd.temp_buffer.tex.Bind();
             RenderQuad(map.offset * room_size * 8, (map.offset + map.size) * room_size * 8);
-        }
-        logTime("water copy");
+        });
 
-        { // render water on top of output
+        benchmark("water", [&]() { // render water on top of output
             rd.water.clear();
             for(auto&& room : map.rooms) {
                 if(room.waterLevel < room_size.y * 8) {
@@ -374,13 +482,12 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
 
             rd.water.Buffer();
             rd.water.Draw();
-        }
-        logTime("water");
+        });
     }
 
     glViewport(0, 0, size.x, size.y);
 
-    { // bloom
+    benchmark("bloom", [&]() { // bloom
         auto buf1 = &rd.fg_buffer;
         auto buf2 = &rd.bg_buffer;
 
@@ -421,11 +528,9 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE);
         RenderQuad();
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    });
 
-        logTime("bloom");
-    }
-
-    { // color correction
+    benchmark("color correction", [&]() {
         rd.fg_buffer.Bind();
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -444,21 +549,13 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             auto ind = room.lighting_index;
             if(ind < 0 || ind >= game_data.ambient.size()) ind = 0;
             auto& light = game_data.ambient[ind];
-            shader.setVec4("colorGainSaturation", {light.color_saturation, light.color_gain});
+            shader.setVec4("colorGainSaturation", {light.color_gain, light.color_saturation});
 
             RenderQuad({-1, -1}, {1, 1}, uv_min, uv_max);
         }
+    });
 
-        logTime("color correction");
-    }
-
-    // Image img(size.x, size.y);
-    // rd.light_buffer.tex.Bind();
-    // glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
-    // img.save_png("C:/Daten/Desktop/test.png");
-
-    // start = start1;
-    // logTime("total");
+    times["total"] = (std::chrono::high_resolution_clock::now() - start).count() / 1000000.0f;
 
     time += ImGui::GetIO().DeltaTime;
 
@@ -473,17 +570,20 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
 void doRender(bool updateGeometry, GameData& game_data, int selectedMap, glm::mat4& MVP, Textured_Framebuffer* frameBuffer) {
     auto& map = game_data.maps[selectedMap];
     auto& rd = *render_data;
+    times.clear();
 
     if(updateGeometry) {
-        renderMap(map, game_data);
-        // logTime("verts map");
+        auto& bufs = render_data->room_buffers;
+        if(bufs.size() < map.rooms.size()) {
+            bufs.resize(map.rooms.size());
+        }
 
-        renderBgs(map);
-        // logTime("verts bg");
-
-        if(rd.accurate_render)
-            render_visibility(map, game_data.uvs);
-        // logTime("verts visibilty");
+        benchmark("verts map", [&]() { renderMap(map, game_data); });
+        benchmark("verts bg", [&]() { renderBgs(map); });
+        benchmark("verts visibilty", [&]() {
+            if(rd.accurate_render)
+                render_visibility(map, game_data.uvs);
+        });
     }
 
     if(rd.accurate_render)
