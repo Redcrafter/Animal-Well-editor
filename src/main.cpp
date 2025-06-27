@@ -317,7 +317,7 @@ static bool load_game(const std::string& path) {
 
         return true;
     } catch(std::exception& e) {
-        error_dialog.push(e.what());
+        error_dialog.error(e.what());
     }
 
     return false;
@@ -328,7 +328,7 @@ static void load_game_dialog() {
     std::string path;
     auto result = NFD::OpenDialog({{"Game", {"exe"}}}, lastPath.c_str(), path, window);
     if(result == NFD::Result::Error) {
-        error_dialog.push(NFD::GetError());
+        error_dialog.error(NFD::GetError());
     } else if(result == NFD::Result::Okay) {
         lastPath = path;
         load_game(path);
@@ -393,7 +393,7 @@ static void dump_assets() {
             file.close();
         }
     } catch(std::exception& e) {
-        error_dialog.push(e.what());
+        error_dialog.error(e.what());
     }
 }
 
@@ -651,7 +651,7 @@ class {
         auto result = NFD::SaveDialog({{"Game", {"exe"}}}, export_path.c_str(), path, window);
 
         if(result == NFD::Result::Error) {
-            error_dialog.push(NFD::GetError());
+            error_dialog.error(NFD::GetError());
             return;
         }
         if(result == NFD::Result::Cancel) {
@@ -685,7 +685,7 @@ class {
 
             has_exported = true;
         } catch(std::exception& e) {
-            error_dialog.push(e.what());
+            error_dialog.error(e.what());
         }
     }
 } exe_exporter;
@@ -718,7 +718,7 @@ class {
         auto result = NFD::SaveDialog({{"Map", {"map"}}}, export_path.c_str(), path, window);
 
         if(result == NFD::Result::Error) {
-            error_dialog.push(NFD::GetError());
+            error_dialog.error(NFD::GetError());
             return;
         }
         if(result == NFD::Result::Cancel) {
@@ -747,7 +747,7 @@ class {
 
             has_exported = true;
         } catch(std::exception& e) {
-            error_dialog.push(e.what());
+            error_dialog.error(e.what());
         }
     }
 } map_exporter;
@@ -776,7 +776,7 @@ class {
                 auto result = NFD::OpenDialog({}, nullptr, path, window);
 
                 if(result == NFD::Result::Error) {
-                    error_dialog.push(NFD::GetError());
+                    error_dialog.error(NFD::GetError());
                 }
                 if(result == NFD::Result::Okay) {
                     file_path = path;
@@ -790,7 +790,7 @@ class {
 
                     ImGui::CloseCurrentPopup();
                 } catch(std::exception& e) {
-                    error_dialog.push(e.what());
+                    error_dialog.error(e.what());
                 }
 
                 load_data();
@@ -815,7 +815,7 @@ void full_map_screenshot() {
     auto result = NFD::SaveDialog({{"png", {"png"}}}, export_path.c_str(), path, window);
 
     if(result == NFD::Result::Error) {
-        error_dialog.push(NFD::GetError());
+        error_dialog.error(NFD::GetError());
         return;
     }
     if(result == NFD::Result::Cancel) {
@@ -896,7 +896,7 @@ static ImGuiID DockSpaceOverViewport() {
                 auto result = NFD::OpenDialog({{"Map", {"map"}}}, lastPath.c_str(), path, window);
 
                 if(result == NFD::Result::Error) {
-                    error_dialog.push(NFD::GetError());
+                    error_dialog.error(NFD::GetError());
                 } else if(result == NFD::Result::Okay) {
                     lastPath = path;
                     try {
@@ -904,7 +904,7 @@ static ImGuiID DockSpaceOverViewport() {
                         auto map = Map(std::span((uint8_t*)data.data(), data.size()));
 
                         if(map.coordinate_map != game_data.maps[selectedMap].coordinate_map) {
-                            error_dialog.push("Warning map structure differs from previously loaded map.\nMight break things so be careful.");
+                            error_dialog.warning("Map structure differs from previously loaded map.\nMight break things so be careful.");
                         }
 
                         game_data.maps[selectedMap] = map;
@@ -913,7 +913,7 @@ static ImGuiID DockSpaceOverViewport() {
                         redo_buffer.clear();
                         updateGeometry = true;
                     } catch(std::exception& e) {
-                        error_dialog.push(e.what());
+                        error_dialog.error(e.what());
                     }
                 }
             }
@@ -1664,7 +1664,7 @@ int runViewer() {
         MVP = projection * view * model;
 
         DockSpaceOverViewport();
-        error_dialog.draw();
+        error_dialog.drawPopup();
 
         // skip rendering if no data is loaded
         if(game_data.loaded) {

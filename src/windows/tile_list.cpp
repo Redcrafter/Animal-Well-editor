@@ -313,7 +313,7 @@ static void MyUserData_ReadLine(ImGuiContext* ctx, ImGuiSettingsHandler* handler
         }
         tile_list.groups.push_back(g);
     } else {
-        error_dialog.push("invalid tile list format");
+        error_dialog.error("Invalid tile list format");
     }
 }
 

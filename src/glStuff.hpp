@@ -183,11 +183,11 @@ struct ShaderProgram {
     ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
         auto fs = cmrc::resources::get_filesystem();
         if(!fs.exists(vertexPath)) {
-            error_dialog.pushf("File not found \"%s\"", vertexPath.c_str());
+            error_dialog.error("File not found \"{}\"", vertexPath.c_str());
             return;
         }
         if(!fs.exists(fragmentPath)) {
-            error_dialog.pushf("File not found \"%s\"", fragmentPath.c_str());
+            error_dialog.error("File not found \"{}\"", fragmentPath.c_str());
             return;
         }
 
@@ -211,7 +211,7 @@ struct ShaderProgram {
         glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
         if(!success) {
             glGetShaderInfoLog(vertex, 512, nullptr, infoLog);
-            error_dialog.pushf("ERROR::SHADER::VERTEX::COMPILATION_FAILED \"%s\"\n%s\n", vertexPath.c_str(), infoLog);
+            error_dialog.error("Vertex shader compilation failed:\n\"{}\"\n{}\n", vertexPath.c_str(), infoLog);
         }
 
         // similiar for Fragment Shader
@@ -222,7 +222,7 @@ struct ShaderProgram {
         glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
         if(!success) {
             glGetShaderInfoLog(fragment, 512, nullptr, infoLog);
-            error_dialog.pushf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED \"%s\"\n%s\n", fragmentPath.c_str(), infoLog);
+            error_dialog.error("Fragment shader compilation failed:\n\"{}\"\n{}\n", fragmentPath.c_str(), infoLog);
         }
 
         // shader Program
@@ -234,7 +234,7 @@ struct ShaderProgram {
         glGetProgramiv(ID, GL_LINK_STATUS, &success);
         if(!success) {
             glGetProgramInfoLog(ID, 512, nullptr, infoLog);
-            error_dialog.pushf("ERROR::SHADER::PROGRAM::LINKING_FAILED\n%s\n", infoLog);
+            error_dialog.error("Shader program linking failed:\n{}\n", infoLog);
         }
 
         // delete the shaders as they're linked into our program now and no longer necessary

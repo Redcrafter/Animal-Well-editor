@@ -2,17 +2,34 @@
 
 #include <string>
 #include <vector>
+#include <format>
+
+struct ErrorInfo {
+    bool error;
+    std::string text;
+};
 
 class ErrorDialog {
-    std::vector<std::string> errors;
+    std::vector<ErrorInfo> errors;
 
   public:
-    void draw();
+    void drawPopup();
 
-    void push(const std::string& error);
-    void pushf(const char* fmt, ...);
+    void error(std::string text) {
+        errors.push_back(ErrorInfo {true, std::move(text) });
+    }
+    void warning(std::string text) {
+        errors.push_back(ErrorInfo {false, std::move(text) });
+    }
 
-    void clear();
+    template<typename... Args>
+    void error(std::format_string<Args...> fmt, Args&&... args) {
+        error(std::vformat(fmt.get(), std::make_format_args(args...)));
+    }
+
+    void clear() {
+        errors.clear();
+    }
 };
 
 inline ErrorDialog error_dialog;
