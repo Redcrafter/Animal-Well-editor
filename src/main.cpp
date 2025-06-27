@@ -52,7 +52,6 @@ bool updateGeometry = false;
 
 GameData game_data;
 
-constexpr auto room_size = glm::ivec2(40, 22);
 constexpr const char* modes[] = {"View", "Edit"};
 int mouse_mode = 0;
 glm::ivec2 mode0_selection = {-1, -1};
@@ -313,7 +312,7 @@ static bool load_game(const std::string& path) {
 
         selectedMap = 0;
         auto& map = game_data.maps[selectedMap];
-        camera.position = -(map.offset + map.size / 2) * room_size * 8;
+        camera.position = -(map.offset + map.size / 2) * Room::size * 8;
 
         return true;
     } catch(std::exception& e) {
@@ -824,15 +823,15 @@ void full_map_screenshot() {
     export_path = path;
 
     auto& map = game_data.maps[selectedMap];
-    auto size = glm::ivec2(map.size.x, map.size.y) * room_size * 8;
+    auto size = glm::ivec2(map.size.x, map.size.y) * Room::size * 8;
 
     Textured_Framebuffer fb(size.x, size.y);
     fb.Bind();
 
     glm::mat4 MVP = glm::ortho<float>(0, size.x, 0, size.y, 0.0f, 100.0f) *
                     glm::lookAt(
-                        glm::vec3(map.offset * room_size * 8, 3),
-                        glm::vec3(map.offset * room_size * 8, 0),
+                        glm::vec3(map.offset * Room::size * 8, 3),
+                        glm::vec3(map.offset * Room::size * 8, 0),
                         glm::vec3(0, 1, 0));
 
     doRender(true, game_data, selectedMap, MVP, &fb);
@@ -1193,7 +1192,7 @@ static void DrawPreviewWindow() {
             }
         }
 
-        auto room_pos = tile_location / room_size;
+        auto room_pos = tile_location / Room::size;
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         ImGui::Text("world pos %i %i", tile_location.x, tile_location.y);
@@ -1329,12 +1328,12 @@ b/g to move to background layer.");
 
         ImGui::Text("world position %i %i", mouse_world_pos.x, mouse_world_pos.y);
 
-        auto room_pos = mouse_world_pos / room_size;
+        auto room_pos = mouse_world_pos / Room::size;
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(!io.WantCaptureMouse && room != nullptr) {
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE)) {
-                auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
+                auto tp = glm::ivec2(mouse_world_pos.x % Room::size.x, mouse_world_pos.y % Room::size.y);
                 auto tile = room->tiles[0][tp.y][tp.x];
 
                 auto lastLayer = mode1_layer;
@@ -1359,7 +1358,7 @@ b/g to move to background layer.");
             if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
                 selection_handler.release();
 
-                auto tp = glm::ivec2(mouse_world_pos.x % room_size.x, mouse_world_pos.y % room_size.y);
+                auto tp = glm::ivec2(mouse_world_pos.x % Room::size.x, mouse_world_pos.y % Room::size.y);
                 auto tile_layer = room->tiles[mode1_layer];
                 auto tile = tile_layer[tp.y][tp.x];
                 if(tile != mode1_placing) {
@@ -1434,7 +1433,7 @@ static void draw_overlay() {
             }
         }
 
-        auto room_pos = tile_location / room_size;
+        auto room_pos = tile_location / Room::size;
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(room != nullptr) {
@@ -1472,16 +1471,16 @@ static void draw_overlay() {
                 render_data->overlay.AddRect(pos, pos + 8, IM_COL32_WHITE, 1);
             }
             if(!render_data->room_grid)
-                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + room_size * 8, IM_COL32(255, 255, 255, 127), 1);
+                render_data->overlay.AddRect(room_pos * Room::size * 8, room_pos * Room::size * 8 + Room::size * 8, IM_COL32(255, 255, 255, 127), 1);
         }
     } else if(mouse_mode == 1) {
         auto mouse_world_pos = screen_to_world(mousePos);
-        auto room_pos = mouse_world_pos / room_size;
+        auto room_pos = mouse_world_pos / Room::size;
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(room != nullptr) {
             if(!render_data->room_grid)
-                render_data->overlay.AddRect(room_pos * room_size * 8, room_pos * room_size * 8 + room_size * 8, IM_COL32(255, 255, 255, 127), 1);
+                render_data->overlay.AddRect(room_pos * Room::size * 8, room_pos * Room::size * 8 + Room::size * 8, IM_COL32(255, 255, 255, 127), 1);
             render_data->overlay.AddRect(mouse_world_pos * 8, mouse_world_pos * 8 + 8);
         }
 

@@ -9,7 +9,6 @@
 #include <map>
 #include <chrono>
 
-constexpr auto room_size = glm::ivec2(40, 22);
 std::map<const char*, float> times;
 
 void drawTimes() {
@@ -70,7 +69,7 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
     auto start = std::chrono::high_resolution_clock::now();
 
     auto& map = game_data.maps[selectedMap];
-    auto size = glm::ivec2(map.size.x, map.size.y) * room_size * 8;
+    auto size = glm::ivec2(map.size.x, map.size.y) * Room::size * 8;
 
     glViewport(0, 0, size.x, size.y);
 
@@ -89,8 +88,8 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
 
     glm::mat4 MVP = glm::ortho<float>(0, size.x, 0, size.y, 0.0f, 100.0f) *
                     glm::lookAt(
-                        glm::vec3(map.offset * room_size * 8, 3),
-                        glm::vec3(map.offset * room_size * 8, 0),
+                        glm::vec3(map.offset * Room::size * 8, 3),
+                        glm::vec3(map.offset * Room::size * 8, 0),
                         glm::vec3(0, 1, 0));
 
     shaders.textured.Use();
@@ -246,11 +245,11 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             if(ind < 0 || ind >= game_data.ambient.size()) ind = 0;
             auto& light = game_data.ambient[ind];
 
-            glm::ivec2 pos = (glm::ivec2(room.x, room.y) - map.offset) * room_size * 8;
-            glViewport(pos.x, pos.y, room_size.x * 8, room_size.y * 8);
+            glm::ivec2 pos = (glm::ivec2(room.x, room.y) - map.offset) * Room::size * 8;
+            glViewport(pos.x, pos.y, Room::size.x * 8, Room::size.y * 8);
 
             glm::vec2 uv_min = glm::vec2(pos) / glm::vec2(size);
-            glm::vec2 uv_max = glm::vec2(pos + room_size * 8) / glm::vec2(size);
+            glm::vec2 uv_max = glm::vec2(pos + Room::size * 8) / glm::vec2(size);
 
             { // background tiles
                 auto& shader = shaders.merge_bg;
@@ -335,7 +334,7 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
 
             // waterfalls
             if(!buff.waterfalls.empty()) {
-                const auto rs = glm::vec2(room_size * 8);
+                const auto rs = glm::vec2(Room::size * 8);
 
                 rd.room_temp_buffer.Bind();
                 glViewport(0, 0, rs.x, rs.y);
@@ -395,7 +394,7 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
                 shaders.copy.setVec4("color", glm::vec4(1));
                 glActiveTexture(GL_TEXTURE0);
                 rd.room_temp_buffer.tex.Bind();
-                glViewport(pos.x, pos.y, room_size.x * 8, room_size.y * 8);
+                glViewport(pos.x, pos.y, Room::size.x * 8, Room::size.y * 8);
                 RenderQuad();
             }
 
@@ -454,19 +453,19 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
             rd.bg_buffer.Bind();
             shaders.textured.Use();
             rd.temp_buffer.tex.Bind();
-            RenderQuad(map.offset * room_size * 8, (map.offset + map.size) * room_size * 8);
+            RenderQuad(map.offset * Room::size * 8, (map.offset + map.size) * Room::size * 8);
         });
 
         benchmark("water", [&]() { // render water on top of output
             rd.water.clear();
             for(auto&& room : map.rooms) {
-                if(room.waterLevel < room_size.y * 8) {
-                    auto pos = glm::ivec2(room.x, room.y) * room_size * 8;
-                    auto h = (room_size.y * 8 - room.waterLevel) / (float)size.y;
-                    rd.water.AddRectFilled({pos.x, pos.y + room.waterLevel}, pos + room_size * 8, {0, 0}, {1, h});
+                if(room.waterLevel < Room::size.y * 8) {
+                    auto pos = glm::ivec2(room.x, room.y) * Room::size * 8;
+                    auto h = (Room::size.y * 8 - room.waterLevel) / (float)size.y;
+                    rd.water.AddRectFilled({pos.x, pos.y + room.waterLevel}, pos + Room::size * 8, {0, 0}, {1, h});
 
-                    // auto pos = (glm::ivec2(room.x, room.y) - map.offset) * room_size * 8;
-                    // rd.water.AddRectFilled(glm::ivec2(pos.x, pos.y + room.waterLevel) / size, pos + room_size * 8, {0, 0}, {1, h});
+                    // auto pos = (glm::ivec2(room.x, room.y) - map.offset) * Room::size * 8;
+                    // rd.water.AddRectFilled(glm::ivec2(pos.x, pos.y + room.waterLevel) / size, pos + Room::size * 8, {0, 0}, {1, h});
                 }
             }
 
@@ -540,11 +539,11 @@ void ingame_render(GameData& game_data, int selectedMap, bool rerender) {
         rd.temp_buffer.tex.Bind();
 
         for(auto& room : map.rooms) {
-            glm::ivec2 pos = (glm::ivec2(room.x, room.y) - map.offset) * room_size * 8;
-            glViewport(pos.x, pos.y, room_size.x * 8, room_size.y * 8);
+            glm::ivec2 pos = (glm::ivec2(room.x, room.y) - map.offset) * Room::size * 8;
+            glViewport(pos.x, pos.y, Room::size.x * 8, Room::size.y * 8);
 
             glm::vec2 uv_min = glm::vec2(pos) / glm::vec2(size);
-            glm::vec2 uv_max = glm::vec2(pos + room_size * 8) / glm::vec2(size);
+            glm::vec2 uv_max = glm::vec2(pos + Room::size * 8) / glm::vec2(size);
 
             auto ind = room.lighting_index;
             if(ind < 0 || ind >= game_data.ambient.size()) ind = 0;
@@ -605,7 +604,7 @@ void doRender(bool updateGeometry, GameData& game_data, int selectedMap, glm::ma
         rd.fg_buffer.tex.Bind();
 
         auto& map = game_data.maps[selectedMap];
-        RenderQuad(map.offset * room_size * 8, (map.offset + map.size) * room_size * 8);
+        RenderQuad(map.offset * Room::size * 8, (map.offset + map.size) * Room::size * 8);
     } else {
         glClearColor(0.45f, 0.45f, 0.45f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);

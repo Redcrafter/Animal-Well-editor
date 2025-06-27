@@ -40,6 +40,8 @@ struct MapTile {
 static_assert(sizeof(MapTile) == 4);
 
 struct Room {
+    static constexpr glm::ivec2 size = glm::ivec2(40, 22);
+
     uint8_t x;
     uint8_t y;
 

@@ -94,7 +94,7 @@ void SearchWindow::draw(const GameData& game_data, std::function<void(int, glm::
                     ImGui::TableNextRow();
 
                     auto el = results[row];
-                    auto pos = el.room_pos * glm::ivec2(40, 22) + el.tile_pos;
+                    auto pos = el.room_pos * Room::size + el.tile_pos;
                     auto tile = game_data.maps[el.map].getTile(el.layer, pos.x, pos.y);
 
                     // clang-format off
@@ -167,7 +167,7 @@ void SearchWindow::draw_overlay(const GameData& game_data, int selectedMap, floa
     for(auto result : results) {
         if(result.map != selectedMap) continue;
 
-        auto p = glm::vec2(result.room_pos * glm::ivec2(40, 22) + result.tile_pos) * 8.0f;
+        auto p = glm::vec2(result.room_pos * Room::size + result.tile_pos) * 8.0f;
         overlay.AddRect(p, p + size, IM_COL32(255, 0, 0, 204), 8 / gScale);
     }
 }
