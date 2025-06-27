@@ -846,6 +846,18 @@ static ImGuiID DockSpaceOverViewport() {
             if(ImGui::MenuItem("Dump tile textures")) {
                 dump_tile_textures();
             }
+            if(ImGui::MenuItem("Clear Map")) {
+                MapSlice slice;
+                auto& map = game_data.maps[selectedMap];
+
+                for (auto &&room : map.rooms) {
+                    room.bgId = 0;
+                    room.waterLevel = 180;
+                    room.lighting_index = 0;
+                    std::memset(room.tiles, 0, sizeof(room.tiles));
+                }
+                updateGeometry = true;
+            }
 
             ImGui::EndDisabled();
 
@@ -1000,9 +1012,6 @@ static void handle_input() {
             updateGeometry = true;
         }
 
-        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Z)) history.undo();
-        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Y)) history.redo();
-
         if(holding && selection_handler.contains(lastWorldPos)) {
             // holding & inside rect
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
@@ -1015,7 +1024,10 @@ static void handle_input() {
         }
     }
 
-    if(GetKey(ImGuiKey_ModCtrl)) {
+    if(GetKey(ImGuiMod_Ctrl)) {
+        if(ImGui::IsKeyPressed(ImGuiKey_Z)) history.undo();
+        if(ImGui::IsKeyPressed(ImGuiKey_Y)) history.redo();
+
         if(GetKeyDown(ImGuiKey_R)) {
             render_data->accurate_render = !render_data->accurate_render;
             updateGeometry = true;
