@@ -63,14 +63,9 @@ uint8_t mode1_layer = 0;
 // stores copied map tiles
 MapSlice clipboard;
 
-// copying the entire map takes ~1MB so 1000 entries is totally fine
-constexpr int max_undo_size = 1000;
-// needs insertion/deletion at both sides due to overflow protection
-std::deque<std::unique_ptr<HistoryItem>> undo_buffer;
-std::vector<std::unique_ptr<HistoryItem>> redo_buffer;
-
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+    error_dialog.error("{}: {}", error, description);
 }
 
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -102,14 +97,7 @@ static void onResize(GLFWwindow* window, int width, int height) {
     projection = glm::ortho<float>(-width / 2, width / 2, height / 2, -height / 2, 0.0f, 100.0f);
 }
 
-static void push_undo(std::unique_ptr<HistoryItem> item) {
-    undo_buffer.push_back(std::move(item));
-    if(undo_buffer.size() > max_undo_size)
-        undo_buffer.pop_front();
-    redo_buffer.clear();
-}
-
-class {
+class SelectionHandler {
     // stores tiles underneath the current selection data
     MapSlice selection_buffer;
     MapSlice temp_buffer;
@@ -136,29 +124,9 @@ class {
         selection_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
     }
     // sets area and copies underlying data
-    void start_from_paste(glm::ivec2 pos, const MapSlice& data) {
-        release();
-        if(data.size() == glm::ivec2(0)) return;
-
-        _size = data.size();
-        start_pos = pos;
-
-        orig_pos = {start_pos, mode1_layer};
-
-        temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
-        push_undo(std::make_unique<AreaChange>(orig_pos, temp_buffer));
-
-        // put copied tiles down
-        data.paste(game_data.maps[selectedMap], orig_pos);
-        selection_buffer = data;
-    }
+    void start_from_paste(glm::ivec2 pos, const MapSlice& data);
     // apply changes without deselecting
-    void apply() {
-        if(start_pos != glm::ivec2(-1) && orig_pos != glm::ivec3(start_pos, mode1_layer)) {
-            push_undo(std::make_unique<AreaMove>(glm::ivec3(start_pos, mode1_layer), orig_pos, temp_buffer, selection_buffer));
-        }
-        orig_pos = glm::ivec3(start_pos, mode1_layer);
-    }
+    void apply();
     // apply changes and deselect
     void release() {
         apply();
@@ -166,15 +134,7 @@ class {
         start_pos = {-1, -1};
         _size = {0, 0};
     }
-    void erase() {
-        apply();
-
-        temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
-        push_undo(std::make_unique<AreaChange>(orig_pos, temp_buffer));
-
-        selection_buffer.fill({}, selection_buffer.size());
-        selection_buffer.paste(game_data.maps[selectedMap], orig_pos);
-    }
+    void erase();
 
     // move selection to different layer
     void change_layer(int from, int to) {
@@ -218,39 +178,95 @@ class {
     glm::ivec2 size() const { return _size; }
 } selection_handler;
 
-static void undo() {
-    if(undo_buffer.empty()) return;
-    selection_handler.release();
+class {
+  private:
+    // copying the entire map takes ~1MB so 1000 entries is totally fine
+    int max_undo_size = 1000;
+    // needs insertion/deletion at both sides due to overflow protection
+    std::deque<std::unique_ptr<HistoryItem>> undo_buffer;
+    std::vector<std::unique_ptr<HistoryItem>> redo_buffer;
 
-    auto el = std::move(undo_buffer.back());
-    undo_buffer.pop_back();
+  public:
+    // push new action to history
+    void push_action(std::unique_ptr<HistoryItem> item) {
+        undo_buffer.push_back(std::move(item));
+        if(undo_buffer.size() > max_undo_size)
+            undo_buffer.pop_front();
+        redo_buffer.clear();
+    }
 
-    auto area = el->apply(game_data.maps[selectedMap]);
-    updateGeometry = true;
+    // undo most recent item
+    void undo() {
+        if(undo_buffer.empty()) return;
+        selection_handler.release();
 
-    // select region that has been undone. only trigger change if actually moved
-    mode1_layer = area.first.z;
-    selection_handler.drag_begin(area.first);
-    selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
+        auto el = std::move(undo_buffer.back());
+        undo_buffer.pop_back();
 
-    redo_buffer.push_back(std::move(el));
+        auto area = el->apply(game_data.maps[selectedMap]);
+        updateGeometry = true;
+
+        // select region that has been undone. only trigger change if actually moved
+        mode1_layer = area.first.z;
+        selection_handler.drag_begin(area.first);
+        selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
+
+        redo_buffer.push_back(std::move(el));
+    }
+    void redo() {
+        if(redo_buffer.empty()) return;
+        selection_handler.release();
+
+        auto el = std::move(redo_buffer.back());
+        redo_buffer.pop_back();
+
+        auto area = el->apply(game_data.maps[selectedMap]);
+        updateGeometry = true;
+
+        // selct region that has been redone. only trigger change if actually moved
+        mode1_layer = area.first.z;
+        selection_handler.drag_begin(area.first);
+        selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
+
+        undo_buffer.push_back(std::move(el));
+    }
+    void clear() {
+        undo_buffer.clear();
+        redo_buffer.clear();
+    }
+} history;
+
+void SelectionHandler::erase() {
+    apply();
+
+    temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
+    history.push_action(std::make_unique<AreaChange>(orig_pos, temp_buffer));
+
+    selection_buffer.fill({}, selection_buffer.size());
+    selection_buffer.paste(game_data.maps[selectedMap], orig_pos);
 }
-static void redo() {
-    if(redo_buffer.empty()) return;
-    selection_handler.release();
+void SelectionHandler::start_from_paste(glm::ivec2 pos, const MapSlice& data) {
+    release();
+    if(data.size() == glm::ivec2(0)) return;
 
-    auto el = std::move(redo_buffer.back());
-    redo_buffer.pop_back();
+    _size = data.size();
+    start_pos = pos;
 
-    auto area = el->apply(game_data.maps[selectedMap]);
-    updateGeometry = true;
+    orig_pos = {start_pos, mode1_layer};
 
-    // selct region that has been redone. only trigger change if actually moved
-    mode1_layer = area.first.z;
-    selection_handler.drag_begin(area.first);
-    selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
+    temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
+    history.push_action(std::make_unique<AreaChange>(orig_pos, temp_buffer));
 
-    undo_buffer.push_back(std::move(el));
+        // put copied tiles down
+    data.paste(game_data.maps[selectedMap], orig_pos);
+    selection_buffer = data;
+}
+    // apply changes without deselecting
+void SelectionHandler::apply() {
+    if(start_pos != glm::ivec2(-1) && orig_pos != glm::ivec3(start_pos, mode1_layer)) {
+        history.push_action(std::make_unique<AreaMove>(glm::ivec3(start_pos, mode1_layer), orig_pos, temp_buffer, selection_buffer));
+    }
+    orig_pos = glm::ivec3(start_pos, mode1_layer);
 }
 
 static ImVec2 toImVec(const glm::vec2 vec) {
@@ -259,7 +275,7 @@ static ImVec2 toImVec(const glm::vec2 vec) {
 
 static void load_data() {
     { // chroma key atlas texture
-        Image tex {game_data.get_asset(255)};
+        auto tex = game_data.atlas.copy();
         // chroma key cyan and replace with alpha
         auto vptr = tex.data();
         for(int i = 0; i < tex.width() * tex.height(); ++i) {
@@ -270,33 +286,32 @@ static void load_data() {
         render_data->textures.atlas.Load(tex);
     }
 
-    render_data->textures.bunny.Load(Image(game_data.get_asset(30)));
-    render_data->textures.time_capsule.Load(Image(game_data.get_asset(277)));
+    render_data->textures.bunny.Load(game_data.bunny);
+    render_data->textures.time_capsule.Load(game_data.time_capsule);
 
     auto& bg_tex = render_data->textures.background;
     bg_tex.Bind();
 
-    bg_tex.LoadSubImage(320 * 0, 180 * 0, game_data.get_asset(11)); // 13
-    bg_tex.LoadSubImage(320 * 1, 180 * 0, game_data.get_asset(12)); // 14
-    bg_tex.LoadSubImage(320 * 2, 180 * 0, game_data.get_asset(13)); // 7, 8
-    bg_tex.LoadSubImage(320 * 3, 180 * 0, game_data.get_asset(14)); // 1
+    bg_tex.LoadSubImage(320 * 0, 180 * 0, game_data.backgrounds[0]); // 13
+    bg_tex.LoadSubImage(320 * 1, 180 * 0, game_data.backgrounds[1]); // 14
+    bg_tex.LoadSubImage(320 * 2, 180 * 0, game_data.backgrounds[2]); // 7, 8
+    bg_tex.LoadSubImage(320 * 3, 180 * 0, game_data.backgrounds[3]); // 1
 
-    bg_tex.LoadSubImage(320 * 0, 180 * 1, game_data.get_asset(15)); // 6
-    bg_tex.LoadSubImage(320 * 1, 180 * 1, game_data.get_asset(16)); // 9, 11
-    bg_tex.LoadSubImage(320 * 2, 180 * 1, game_data.get_asset(17)); // 10
-    bg_tex.LoadSubImage(320 * 3, 180 * 1, game_data.get_asset(18)); // 16
+    bg_tex.LoadSubImage(320 * 0, 180 * 1, game_data.backgrounds[4]); // 6
+    bg_tex.LoadSubImage(320 * 1, 180 * 1, game_data.backgrounds[5]); // 9, 11
+    bg_tex.LoadSubImage(320 * 2, 180 * 1, game_data.backgrounds[6]); // 10
+    bg_tex.LoadSubImage(320 * 3, 180 * 1, game_data.backgrounds[7]); // 16
 
-    bg_tex.LoadSubImage(320 * 0, 180 * 2, game_data.get_asset(19)); // 4, 5
-    bg_tex.LoadSubImage(320 * 1, 180 * 2, game_data.get_asset(20)); // 15
-    bg_tex.LoadSubImage(320 * 2, 180 * 2, game_data.get_asset(21)); // 19
-    bg_tex.LoadSubImage(320 * 3, 180 * 2, game_data.get_asset(22)); // 2, 3
+    bg_tex.LoadSubImage(320 * 0, 180 * 2, game_data.backgrounds[8]); // 4, 5
+    bg_tex.LoadSubImage(320 * 1, 180 * 2, game_data.backgrounds[9]); // 15
+    bg_tex.LoadSubImage(320 * 2, 180 * 2, game_data.backgrounds[10]); // 19
+    bg_tex.LoadSubImage(320 * 3, 180 * 2, game_data.backgrounds[11]); // 2, 3
 
-    bg_tex.LoadSubImage(320 * 0, 180 * 3, game_data.get_asset(23)); // 17
-    bg_tex.LoadSubImage(320 * 1, 180 * 3, game_data.get_asset(24)); // 18
-    bg_tex.LoadSubImage(320 * 2, 180 * 3, game_data.get_asset(26)); // 12
+    bg_tex.LoadSubImage(320 * 0, 180 * 3, game_data.backgrounds[12]); // 17
+    bg_tex.LoadSubImage(320 * 1, 180 * 3, game_data.backgrounds[13]); // 18
+    bg_tex.LoadSubImage(320 * 2, 180 * 3, game_data.backgrounds[14]); // 12
 
-    undo_buffer.clear();
-    redo_buffer.clear();
+    history.clear();
 
     updateGeometry = true;
 }
@@ -307,7 +322,7 @@ static bool load_game(const std::string& path) {
     }
 
     try {
-        game_data = GameData::load(path);
+        game_data = GameData::load_exe(path);
         load_data();
 
         selectedMap = 0;
@@ -323,7 +338,7 @@ static bool load_game(const std::string& path) {
 }
 
 static void load_game_dialog() {
-    static std::string lastPath = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well";
+    static std::string lastPath = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Animal Well\\";
     std::string path;
     auto result = NFD::OpenDialog({{"Game", {"exe"}}}, lastPath.c_str(), path, window);
     if(result == NFD::Result::Error) {
@@ -345,8 +360,6 @@ static void dump_assets() {
 
     try {
         std::filesystem::create_directories(path);
-
-        game_data.apply_changes();
 
         for(size_t i = 0; i < game_data.assets.size(); ++i) {
             auto& item = game_data.assets[i];
@@ -372,7 +385,7 @@ static void dump_assets() {
                 assert(item.type == AssetType::MapData || item.type == AssetType::Encrypted_MapData);
                 ext = ".uvs";
             } else if(ptr[0] == 'P' && ptr[1] == 'K' && ptr[2] == 3 && ptr[3] == 4) {
-                assert(item.type == AssetType::Encrypted_XPS);
+                assert(item.type == AssetType::Encrypted_Text);
                 ext = ".xps";
             } else if(ptr[0] == 0x00 && ptr[1] == 0x0B && ptr[2] == 0xF0 && ptr[3] == 0x00) {
                 assert(item.type == AssetType::MapData || item.type == AssetType::Encrypted_MapData);
@@ -594,127 +607,34 @@ static void randomize() {
 }
 
 class {
-    std::string export_path = std::filesystem::current_path().string() + "/Animal Well.exe";
-    char save_name[15] = "AnimalWell.sav";
-    bool has_exported = false;
-    bool patch_renderdoc = false;
-
-    bool should_open = false;
-
-  public:
-    void draw_options() {
-        if(has_exported) {
-            const auto fileName = std::filesystem::path(export_path).filename().string();
-            auto name = "Export to " + fileName;
-            if(ImGui::MenuItem(name.c_str(), "Ctrl+S")) {
-                export_exe();
-            }
-        } else {
-            if(ImGui::MenuItem("Export...##exe", "Ctrl+S")) {
-                export_explicit();
-            }
-        }
-
-        if(ImGui::MenuItem("Export As...##exe", "Ctrl+Shift+S")) {
-            export_explicit();
-        }
-    }
-
-    void draw_popup() {
-        if(should_open) {
-            ImGui::OpenPopup("Export options");
-            should_open = false;
-        }
-
-        if(ImGui::BeginPopupModal("Export options")) {
-            ImGui::InputText("path", &export_path);
-            ImGui::Checkbox("patch renderdoc", &patch_renderdoc);
-
-            ImGui::InputText("save name", save_name, sizeof(save_name));
-
-            if(ImGui::Button("Export")) {
-                export_exe();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if(ImGui::Button("Cancel")) {
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::EndPopup();
-        }
-    }
-
-    void export_explicit() {
-        std::string path;
-        auto result = NFD::SaveDialog({{"Game", {"exe"}}}, export_path.c_str(), path, window);
-
-        if(result == NFD::Result::Error) {
-            error_dialog.error(NFD::GetError());
-            return;
-        }
-        if(result == NFD::Result::Cancel) {
-            return;
-        }
-
-        export_path = path;
-
-        // options_popup();
-        should_open = true;
-    }
-    void export_implicit() {
-        if(has_exported) {
-            export_exe();
-        } else {
-            export_explicit();
-        }
-    }
-
-  private:
-    void export_exe() {
-        try {
-            game_data.apply_changes();
-
-            // copying invalidates asset span
-            auto out = game_data; // make copy for exporting
-
-            out.patch_renderdoc(patch_renderdoc);
-            out.patch_save_path(save_name);
-            out.save(export_path);
-
-            has_exported = true;
-        } catch(std::exception& e) {
-            error_dialog.error(e.what());
-        }
-    }
-} exe_exporter;
-
-class {
-    std::string export_path = std::filesystem::current_path().string() + "/map.map";
+    std::string export_path = std::filesystem::current_path().string();
     bool has_exported = false;
 
   public:
     void draw_options() {
+        if(ImGui::MenuItem("Open...")) {
+            loadDialog();
+        }
+
         if(has_exported) {
             const auto fileName = std::filesystem::path(export_path).filename().string();
-            auto name = "Export to " + fileName;
+            auto name = "Save In " + fileName;
             if(ImGui::MenuItem(name.c_str(), "Ctrl+E")) {
                 export_map();
             }
         } else {
-            if(ImGui::MenuItem("Export...", "Ctrl+E")) {
+            if(ImGui::MenuItem("Save...", "Ctrl+E")) {
                 export_explicit();
             }
         }
-
-        if(ImGui::MenuItem("Export As...", "Ctrl+Shift+E")) {
+        if(ImGui::MenuItem("Save As...", "Ctrl+Shift+E")) {
             export_explicit();
         }
     }
 
     void export_explicit() {
         std::string path;
-        auto result = NFD::SaveDialog({{"Map", {"map"}}}, export_path.c_str(), path, window);
+        auto result = NFD::PickFolder(export_path.c_str(), path, window);
 
         if(result == NFD::Result::Error) {
             error_dialog.error(NFD::GetError());
@@ -736,77 +656,36 @@ class {
     }
 
   private:
+    void loadDialog() {
+        std::string path;
+        auto result = NFD::PickFolder(export_path.c_str(), path, window);
+        if(result == NFD::Result::Error) {
+            error_dialog.error(NFD::GetError());
+            return;
+        }
+        if(result == NFD::Result::Cancel) {
+            return;
+        }
+
+        export_path = path;
+        try {
+            game_data.load_folder(export_path);
+            has_exported = true;
+            load_data();
+        } catch(const std::exception& e) {
+            error_dialog.error(e.what());
+        }
+    }
+
     void export_map() {
         try {
-            auto data = game_data.maps[selectedMap].save();
-
-            std::ofstream file(export_path, std::ios::binary);
-            file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-            file.write((char*)data.data(), data.size());
-
+            game_data.save_folder(export_path);
             has_exported = true;
         } catch(std::exception& e) {
             error_dialog.error(e.what());
         }
     }
-} map_exporter;
-
-class {
-    bool should_open = false;
-    int selected_asset = 0;
-    std::string file_path;
-
-  public:
-    void draw_popup() {
-        if(should_open) {
-            ImGui::OpenPopup("Replace asset");
-            should_open = false;
-        }
-
-        if(ImGui::BeginPopupModal("Replace asset")) {
-            ImGui::InputInt("asset id", &selected_asset);
-            selected_asset = std::clamp(selected_asset, 0, (int)game_data.assets.size() - 1);
-
-            ImGui::InputText("path", &file_path);
-            ImGui::SameLine();
-
-            if(ImGui::Button("Search")) {
-                std::string path;
-                auto result = NFD::OpenDialog({}, nullptr, path, window);
-
-                if(result == NFD::Result::Error) {
-                    error_dialog.error(NFD::GetError());
-                }
-                if(result == NFD::Result::Okay) {
-                    file_path = path;
-                }
-            }
-
-            if(ImGui::Button("Replace")) {
-                try {
-                    auto data = readFile(file_path.c_str());
-                    game_data.replace_asset(std::span((uint8_t*)data.data(), data.size()), selected_asset);
-
-                    ImGui::CloseCurrentPopup();
-                } catch(std::exception& e) {
-                    error_dialog.error(e.what());
-                }
-
-                load_data();
-            }
-            ImGui::SameLine();
-            if(ImGui::Button("Cancel")) {
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::EndPopup();
-        }
-    }
-
-    void open() {
-        should_open = true;
-    }
-} replacer;
+} saver;
 
 void full_map_screenshot() {
     static std::string export_path = std::filesystem::current_path().string() + "/map.png";
@@ -879,17 +758,18 @@ static ImGuiID DockSpaceOverViewport() {
 
     if(ImGui::BeginMenuBar()) {
         if(ImGui::BeginMenu("File")) {
-            if(ImGui::MenuItem("Load Game")) {
-                load_game_dialog();
-            }
-
             ImGui::BeginDisabled(!game_data.loaded);
-            exe_exporter.draw_options();
+            saver.draw_options();
             ImGui::EndDisabled();
 
             ImGui::Separator();
 
-            if(ImGui::MenuItem("Load Map")) {
+            if(ImGui::MenuItem("Import exe")) {
+                load_game_dialog();
+            }
+
+            ImGui::BeginDisabled(!game_data.loaded);
+            if(ImGui::MenuItem("Import map")) {
                 static std::string lastPath = std::filesystem::current_path().string();
                 std::string path;
                 auto result = NFD::OpenDialog({{"Map", {"map"}}}, lastPath.c_str(), path, window);
@@ -908,17 +788,13 @@ static ImGuiID DockSpaceOverViewport() {
 
                         game_data.maps[selectedMap] = map;
 
-                        undo_buffer.clear();
-                        redo_buffer.clear();
+                        history.clear();
                         updateGeometry = true;
                     } catch(std::exception& e) {
                         error_dialog.error(e.what());
                     }
                 }
             }
-
-            ImGui::BeginDisabled(!game_data.loaded);
-            map_exporter.draw_options();
             ImGui::EndDisabled();
 
             ImGui::EndMenu();
@@ -926,8 +802,7 @@ static ImGuiID DockSpaceOverViewport() {
 
         if(ImGui::BeginMenu("Display")) {
             if(ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
-                undo_buffer.clear();
-                redo_buffer.clear();
+                history.clear();
                 updateGeometry = true;
             }
 
@@ -942,7 +817,7 @@ static ImGuiID DockSpaceOverViewport() {
             if(ImGui::MenuItem("Accurate vines", nullptr, &render_data->accurate_vines)) {
                 updateGeometry = true;
             }
-            ImGui::MenuItem("Show Sprite Composition", nullptr, & render_data->sprite_composition);
+            ImGui::MenuItem("Show Sprite Composition", nullptr, &render_data->sprite_composition);
             if(ImGui::MenuItem("InGame Rendering", "Ctrl+R", &render_data->accurate_render)) {
                 updateGeometry = true;
             }
@@ -970,9 +845,6 @@ static ImGuiID DockSpaceOverViewport() {
             }
             if(ImGui::MenuItem("Dump tile textures")) {
                 dump_tile_textures();
-            }
-            if(ImGui::MenuItem("Replace asset")) {
-                replacer.open();
             }
 
             ImGui::EndDisabled();
@@ -1114,7 +986,7 @@ static void handle_input() {
                 if(GetKeyDown(ImGuiKey_X)) {
                     selection_handler.apply();
                     clipboard.cut(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
-                    push_undo(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
+                    history.push_action(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
                     updateGeometry = true;
                 }
             }
@@ -1128,8 +1000,8 @@ static void handle_input() {
             updateGeometry = true;
         }
 
-        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Z)) undo();
-        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Y)) redo();
+        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Z)) history.undo();
+        if(GetKey(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_Y)) history.redo();
 
         if(holding && selection_handler.contains(lastWorldPos)) {
             // holding & inside rect
@@ -1148,12 +1020,11 @@ static void handle_input() {
             render_data->accurate_render = !render_data->accurate_render;
             updateGeometry = true;
         }
-        if(GetKey(ImGuiKey_ModShift)) {
-            if(GetKeyDown(ImGuiKey_S)) exe_exporter.export_explicit();
-            if(GetKeyDown(ImGuiKey_E)) map_exporter.export_explicit();
-        } else {
-            if(GetKeyDown(ImGuiKey_S)) exe_exporter.export_implicit();
-            if(GetKeyDown(ImGuiKey_E)) map_exporter.export_implicit();
+        if(GetKeyDown(ImGuiKey_S)) {
+            if(GetKey(ImGuiKey_ModShift))
+                saver.export_explicit();
+            else
+                saver.export_implicit();
         }
     }
 }
@@ -1362,7 +1233,7 @@ b/g to move to background layer.");
                 auto tile_layer = room->tiles[mode1_layer];
                 auto tile = tile_layer[tp.y][tp.x];
                 if(tile != mode1_placing) {
-                    push_undo(std::make_unique<SingleChange>(glm::ivec3(mouse_world_pos, mode1_layer), tile));
+                    history.push_action(std::make_unique<SingleChange>(glm::ivec3(mouse_world_pos, mode1_layer), tile));
                     tile_layer[tp.y][tp.x] = mode1_placing;
                     updateGeometry = true;
                 }
@@ -1628,7 +1499,9 @@ int runViewer() {
 #pragma endregion
 
     if(!load_game("C:/Program Files (x86)/Steam/steamapps/common/Animal Well/Animal Well.exe")) {
-        load_game("./Animal Well.exe");
+        if(!load_game("./Animal Well.exe")) {
+            error_dialog.warning("Failed to find Animal Well.exe.\nManually load it with File > Import exe\nor copy Animal Well.exe into the folder containing the editor to load it automatically in the future.");
+        }
     }
 
     // Main loop

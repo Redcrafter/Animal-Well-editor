@@ -242,8 +242,8 @@ struct SectionHeader {
     SectionFlags characteristics;
 };
 
-SegmentData getSegmentOffsets(std::span<char> data) {
-    auto ptr = (uint8_t*)data.data();
+SegmentData getSegmentOffsets(std::span<uint8_t> data) {
+    auto ptr = data.data();
 
     auto dos_header = (DOSHeader*)ptr;
     if(dos_header->signature != 0x5A4D) { // 'ZM'

@@ -22,4 +22,4 @@ struct SegmentData {
     }
 };
 
-SegmentData getSegmentOffsets(std::span<char> data);
+SegmentData getSegmentOffsets(std::span<uint8_t> data);

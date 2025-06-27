@@ -12,15 +12,6 @@ static std::array<uint8_t, 16> keys[3] = {
     {0x11, 0x14, 0x18, 0x14, 0x88, 0x82, 0x42, 0x82, 0x28, 0x24, 0x88, 0x82, 0x11, 0x18, 0x44, 0x11}  // time capsule works for 222/277/377
 };
 
-std::vector<char> readFile(const char* path) {
-    if(!std::filesystem::exists(path))
-        throw std::runtime_error("File not found");
-
-    std::ifstream testFile(path, std::ios::binary);
-    testFile.exceptions(std::ifstream::badbit | std::ifstream::failbit);
-    return std::vector(std::istreambuf_iterator(testFile), std::istreambuf_iterator<char>());
-}
-
 bool tryDecrypt(const asset_entry& item, std::span<const uint8_t> data, std::vector<uint8_t>& out) {
     if(((uint8_t)item.type & 192) == 64) {
         for(auto& k : keys) {

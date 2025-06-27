@@ -104,15 +104,15 @@ class Map {
 
     explicit Map(std::span<const uint8_t> data) {
         if(data.size() < sizeof(MapHeader)) {
-            throw std::runtime_error("Error parsing map: invalid size");
+            throw std::runtime_error("parsing map failed: invalid header size");
         }
 
         auto head = *(MapHeader*)(data.data());
         if(head.signature1 != 0xF00DCAFE || head.signature2 != 0xF0F0CAFE) {
-            throw std::runtime_error("Error parsing map: invalid header");
+            throw std::runtime_error("parsing map failed: invalid header data");
         }
         if(data.size() < sizeof(MapHeader) + head.roomCount * sizeof(Room)) {
-            throw std::runtime_error("Error parsing map: invalid size");
+            throw std::runtime_error("parsing map failed: invalid room size");
         }
         Room* rooms_ = (Room*)(data.data() + sizeof(MapHeader));
 
@@ -185,6 +185,7 @@ class Map {
 
     auto save() const {
         auto bytes = sizeof(MapHeader) + rooms.size() * sizeof(Room);
+        if((bytes % 16) != 0) bytes += 16 - (bytes % 16); // pad to 16 bytes
         std::vector<uint8_t> data(bytes);
 
         *(MapHeader*)data.data() = {

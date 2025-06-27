@@ -13,7 +13,7 @@ enum class AssetType : uint8_t {
     Shader = 7,
     Font = 8,
 
-    Encrypted_XPS = 64,
+    Encrypted_Text = 64, // only used for .xps
     Encrypted_MapData = 65,
     Encrypted_Png = 66,
     Encrypted_Ogg = 67
@@ -23,7 +23,7 @@ struct asset_entry {
     AssetType type;
     uint8_t unknown1[7];
 
-    uint64_t ptr; // offset by 0x140001200
+    uint64_t ptr;
     uint32_t length;
 
     uint32_t unknown2;
@@ -32,8 +32,6 @@ struct asset_entry {
     uint8_t unknown4[16];
 };
 static_assert(sizeof(asset_entry) == 0x30);
-
-std::vector<char> readFile(const char* path);
 
 bool tryDecrypt(const asset_entry& item, std::span<const uint8_t> data, std::vector<uint8_t>& out);
 

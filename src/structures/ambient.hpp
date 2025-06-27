@@ -23,7 +23,7 @@ struct LightingData {
         auto magic = *(uint32_t*)ptr;
         ptr += 4;
         if(magic != 0x00F00B00)
-            throw std::runtime_error("Error parsing ambient data: invalid header");
+            throw std::runtime_error("parsing ambient data failed: invalid header magic");
 
         auto count = *(uint64_t*)ptr;
         ptr += 8;
