@@ -1552,9 +1552,6 @@ int runViewer() {
 
         // skip rendering if no data is loaded
         if(game_data.loaded) {
-            exe_exporter.draw_popup();
-            replacer.draw_popup();
-
             search_window.draw(game_data, [](int map, const glm::ivec2 pos) {
                 if(map != selectedMap) {
                     selectedMap = map;
