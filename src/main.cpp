@@ -52,7 +52,7 @@ bool updateGeometry = false;
 
 GameData game_data;
 
-constexpr const char* modes[] = {"View", "Edit"};
+constexpr const char* modes[] = {"Select", "Place"};
 int mouse_mode = 0;
 glm::ivec2 mode0_selection = {-1, -1};
 MapTile mode1_placing;
@@ -98,8 +98,9 @@ static void onResize(GLFWwindow* window, int width, int height) {
 }
 
 class SelectionHandler {
-    // stores tiles underneath the current selection data
+    // stores the tiles currently beeing held
     MapSlice selection_buffer;
+    // stores tiles underneath the current selection data
     MapSlice temp_buffer;
 
     // location where current selection was originally from
@@ -135,11 +136,12 @@ class SelectionHandler {
         _size = {0, 0};
     }
     void erase();
+    void cut();
 
     // move selection to different layer
     void change_layer(int from, int to) {
+        if(from == to) return;
         if(!holding()) return;
-        assert(from != to);
 
         auto& map = game_data.maps[selectedMap];
         temp_buffer.paste(map, glm::ivec3(start_pos, from)); // put original data back
@@ -245,6 +247,20 @@ void SelectionHandler::erase() {
     selection_buffer.fill({}, selection_buffer.size());
     selection_buffer.paste(game_data.maps[selectedMap], orig_pos);
 }
+void SelectionHandler::cut() {
+    apply();
+
+    auto& map = game_data.maps[selectedMap];
+    temp_buffer.paste(map, glm::ivec3(start_pos, mode1_layer)); // put original data back
+
+    clipboard = selection_handler.selection_buffer;
+    selection_handler.selection_buffer.clear();
+
+    history.push_action(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
+
+    // release();
+    updateGeometry = true;
+}
 void SelectionHandler::start_from_paste(glm::ivec2 pos, const MapSlice& data) {
     release();
     if(data.size() == glm::ivec2(0)) return;
@@ -257,11 +273,10 @@ void SelectionHandler::start_from_paste(glm::ivec2 pos, const MapSlice& data) {
     temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
     history.push_action(std::make_unique<AreaChange>(orig_pos, temp_buffer));
 
-        // put copied tiles down
+    // put copied tiles down
     data.paste(game_data.maps[selectedMap], orig_pos);
     selection_buffer = data;
 }
-    // apply changes without deselecting
 void SelectionHandler::apply() {
     if(start_pos != glm::ivec2(-1) && orig_pos != glm::ivec3(start_pos, mode1_layer)) {
         history.push_action(std::make_unique<AreaMove>(glm::ivec3(start_pos, mode1_layer), orig_pos, temp_buffer, selection_buffer));
@@ -996,10 +1011,7 @@ static void handle_input() {
             if(GetKey(ImGuiMod_Ctrl)) {
                 if(GetKeyDown(ImGuiKey_C)) clipboard.copy(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
                 if(GetKeyDown(ImGuiKey_X)) {
-                    selection_handler.apply();
-                    clipboard.cut(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
-                    history.push_action(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
-                    updateGeometry = true;
+                    selection_handler.cut();
                 }
             }
             selection_handler.move(arrow_key_dir());
@@ -1253,9 +1265,16 @@ b/g to move to background layer.");
         }
 
         ImGui::NewLine();
-        if(ImGui::Checkbox("background layer", (bool*)&mode1_layer)) {
-            selection_handler.change_layer(!mode1_layer, mode1_layer);
+        if(ImGui::RadioButton("Foreground", mode1_layer == 0)) {
+            selection_handler.change_layer(mode1_layer, 0);
+            mode1_layer = 0;
         }
+        ImGui::SameLine();
+        if(ImGui::RadioButton("Background", mode1_layer == 1)) {
+            selection_handler.change_layer(mode1_layer, 1);
+            mode1_layer = 1;
+        }
+
         ImGui::NewLine();
         ImGui::InputScalar("id", ImGuiDataType_U16, &mode1_placing.tile_id);
         ImGui::InputScalar("param", ImGuiDataType_U8, &mode1_placing.param);

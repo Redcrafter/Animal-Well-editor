@@ -121,7 +121,7 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
     ImGui::InputInt("size", &box_size);
     box_size = std::max(box_size, 1);
     ImGui::SameLine();
-    HelpMarker("Left click a tile to open it in the tile viewer.\nMiddle click a tile to copy it to edit mode.\nPress 'Del' on a tile to delete it.\nTiles and groups can be reordered by dragging them around.");
+    HelpMarker("Left click a tile to copy it to edit mode.\nMiddle click a tile to open it in the tile viewer.\nPress 'Del' while hovering over a tile to delete it.\nTiles and groups can be reordered by dragging them around.");
 
     auto g = ImGui::GetCurrentContext();
     auto window = g->CurrentWindow;
@@ -168,8 +168,7 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
                 auto sp = window->DC.CursorPos;
 
                 if(TileButton(tile, game_data, box_size) && drag_start.x == -1) {
-                    tile_viewer.select_tile(tile);
-                    tile_viewer.focus();
+                    mode1_placing = {tile};
                 }
 
                 if(ImGui::IsItemHovered() && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
@@ -177,7 +176,8 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
                     j--;
                 }
                 if(ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-                    mode1_placing = {tile};
+                    tile_viewer.select_tile(tile);
+                    tile_viewer.focus();
                 }
                 if(ImGui::IsItemActive() && !ImGui::IsItemHovered()) { // start dragging
                     drag_start = {i, j};
