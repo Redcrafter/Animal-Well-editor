@@ -1,7 +1,11 @@
 #pragma once
 
 #include "map_slice.hpp"
+#include <glm/glm.hpp>
+
+#include <deque>
 #include <memory>
+#include <vector>
 
 class HistoryItem {
   public:
@@ -61,3 +65,23 @@ class SingleChange final : public HistoryItem {
         return {position, {1, 1}};
     }
 };
+
+class HistoryManager {
+  private:
+    // copying the entire map takes ~1MB so 1000 entries is totally fine
+    static constexpr size_t max_undo_size = 1000;
+    // needs insertion/deletion at both sides due to overflow protection
+    std::deque<std::unique_ptr<HistoryItem>> undo_buffer;
+    std::vector<std::unique_ptr<HistoryItem>> redo_buffer;
+
+  public:
+    // push new action to history
+    void push_action(std::unique_ptr<HistoryItem> item);
+
+    // undo most recent item
+    void undo();
+    void redo();
+    void clear();
+};
+
+inline HistoryManager history;

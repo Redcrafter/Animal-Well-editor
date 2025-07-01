@@ -50,6 +50,9 @@ class MapSlice {
             }
         }
     }
+    void fill(const MapTile tile) {
+        fill(tile, _size);
+    }
     void fill(const MapTile tile, glm::ivec2 size) {
         data.clear();
         data.reserve(size.x * size.y);
@@ -65,4 +68,12 @@ class MapSlice {
     }
 
     glm::ivec2 size() const { return _size; }
+
+    // returns true size = 0 or all tiles are 0
+    bool empty() const {
+        for (auto &i : data) {
+            if(i != MapTile()) return false;
+        }
+        return true;
+    }
 };

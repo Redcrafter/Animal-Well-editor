@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
 
@@ -20,8 +21,8 @@ struct MapHeader {
 };
 
 struct MapTile {
-    uint16_t tile_id;
-    uint8_t param; // depends on tile_id
+    uint16_t tile_id = 0;
+    uint8_t param = 0; // depends on tile_id
 
     union {
         struct {
@@ -30,7 +31,7 @@ struct MapTile {
             bool rotate_90 : 1;
             bool rotate_180 : 1;
         };
-        uint8_t flags;
+        uint8_t flags = 0;
     };
 
     bool operator==(const MapTile& other) const {

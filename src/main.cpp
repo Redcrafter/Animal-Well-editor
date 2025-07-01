@@ -21,8 +21,11 @@
 #include <nfd.h>
 
 #include "game_data.hpp"
+#include "globals.hpp"
 #include "history.hpp"
 #include "map_slice.hpp"
+#include "selection.hpp"
+
 #include "rendering/geometry.hpp"
 #include "rendering/pipeline.hpp"
 #include "rendering/renderData.hpp"
@@ -47,21 +50,10 @@ glm::vec2 lastMousePos = glm::vec2(-1);
 
 glm::vec2 screenSize;
 
-int selectedMap = 0;
-bool updateGeometry = false;
-
-GameData game_data;
-
 constexpr const char* modes[] = {"Select", "Place"};
 int mouse_mode = 0;
 glm::ivec2 mode0_selection = {-1, -1};
 MapTile mode1_placing;
-
-// 0 = forground, 1 = background
-uint8_t mode1_layer = 0;
-
-// stores copied map tiles
-MapSlice clipboard;
 
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -95,193 +87,6 @@ static void onResize(GLFWwindow* window, int width, int height) {
     screenSize = glm::vec2(width, height);
     glViewport(0, 0, width, height);
     projection = glm::ortho<float>(-width / 2, width / 2, height / 2, -height / 2, 0.0f, 100.0f);
-}
-
-class SelectionHandler {
-    // stores the tiles currently beeing held
-    MapSlice selection_buffer;
-    // stores tiles underneath the current selection data
-    MapSlice temp_buffer;
-
-    // location where current selection was originally from
-    glm::ivec3 orig_pos {-1, -1, -1};
-    // current selection location
-    glm::ivec2 start_pos = {-1, -1};
-    glm::ivec2 _size = {0, 0};
-
-  public:
-    void drag_begin(glm::ivec2 pos) {
-        release();
-        start_pos = pos;
-    }
-    void drag_end(glm::ivec2 pos) {
-        assert(start_pos != glm::ivec2(-1, -1));
-        _size = glm::abs(pos - start_pos) + 1;
-        start_pos = glm::min(start_pos, pos); // take min so start is always in the top left
-
-        orig_pos = {start_pos, mode1_layer};
-
-        temp_buffer.fill({}, _size);
-        selection_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
-    }
-    // sets area and copies underlying data
-    void start_from_paste(glm::ivec2 pos, const MapSlice& data);
-    // apply changes without deselecting
-    void apply();
-    // apply changes and deselect
-    void release() {
-        apply();
-        orig_pos = {-1, -1, -1};
-        start_pos = {-1, -1};
-        _size = {0, 0};
-    }
-    void erase();
-    void cut();
-
-    // move selection to different layer
-    void change_layer(int from, int to) {
-        if(from == to) return;
-        if(!holding()) return;
-
-        auto& map = game_data.maps[selectedMap];
-        temp_buffer.paste(map, glm::ivec3(start_pos, from)); // put original data back
-        temp_buffer.copy(map, glm::ivec3(start_pos, to), _size); // store underlying
-        selection_buffer.paste(map, glm::ivec3(start_pos, to)); // place preview on top
-        updateGeometry = true;
-    }
-
-    void move(glm::ivec2 delta) {
-        if(delta == glm::ivec2(0, 0)) return;
-        auto& map = game_data.maps[selectedMap];
-
-        temp_buffer.paste(map, glm::ivec3(start_pos, mode1_layer)); // put original data back
-
-        // move to new pos
-        start_pos += delta;
-
-        // store underlying
-        temp_buffer.copy(map, glm::ivec3(start_pos, mode1_layer), _size);
-        selection_buffer.paste(map, glm::ivec3(start_pos, mode1_layer)); // place preview on top
-
-        updateGeometry = true;
-    }
-
-    bool selecting() const {
-        return start_pos != glm::ivec2(-1, -1) && _size == glm::ivec2(0);
-    }
-    bool holding() const {
-        return start_pos != glm::ivec2(-1, -1) && _size != glm::ivec2(0);
-    }
-    bool contains(glm::ivec2 pos) const {
-        return pos.x >= start_pos.x && pos.y >= start_pos.y &&
-               pos.x < (start_pos.x + _size.x) && pos.y < (start_pos.y + _size.y);
-    }
-    glm::ivec3 start() const { return glm::ivec3(start_pos, mode1_layer); }
-    glm::ivec2 size() const { return _size; }
-} selection_handler;
-
-class {
-  private:
-    // copying the entire map takes ~1MB so 1000 entries is totally fine
-    int max_undo_size = 1000;
-    // needs insertion/deletion at both sides due to overflow protection
-    std::deque<std::unique_ptr<HistoryItem>> undo_buffer;
-    std::vector<std::unique_ptr<HistoryItem>> redo_buffer;
-
-  public:
-    // push new action to history
-    void push_action(std::unique_ptr<HistoryItem> item) {
-        undo_buffer.push_back(std::move(item));
-        if(undo_buffer.size() > max_undo_size)
-            undo_buffer.pop_front();
-        redo_buffer.clear();
-    }
-
-    // undo most recent item
-    void undo() {
-        if(undo_buffer.empty()) return;
-        selection_handler.release();
-
-        auto el = std::move(undo_buffer.back());
-        undo_buffer.pop_back();
-
-        auto area = el->apply(game_data.maps[selectedMap]);
-        updateGeometry = true;
-
-        // select region that has been undone. only trigger change if actually moved
-        mode1_layer = area.first.z;
-        selection_handler.drag_begin(area.first);
-        selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
-
-        redo_buffer.push_back(std::move(el));
-    }
-    void redo() {
-        if(redo_buffer.empty()) return;
-        selection_handler.release();
-
-        auto el = std::move(redo_buffer.back());
-        redo_buffer.pop_back();
-
-        auto area = el->apply(game_data.maps[selectedMap]);
-        updateGeometry = true;
-
-        // selct region that has been redone. only trigger change if actually moved
-        mode1_layer = area.first.z;
-        selection_handler.drag_begin(area.first);
-        selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
-
-        undo_buffer.push_back(std::move(el));
-    }
-    void clear() {
-        undo_buffer.clear();
-        redo_buffer.clear();
-    }
-} history;
-
-void SelectionHandler::erase() {
-    apply();
-
-    temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
-    history.push_action(std::make_unique<AreaChange>(orig_pos, temp_buffer));
-
-    selection_buffer.fill({}, selection_buffer.size());
-    selection_buffer.paste(game_data.maps[selectedMap], orig_pos);
-}
-void SelectionHandler::cut() {
-    apply();
-
-    auto& map = game_data.maps[selectedMap];
-    temp_buffer.paste(map, glm::ivec3(start_pos, mode1_layer)); // put original data back
-
-    clipboard = selection_handler.selection_buffer;
-    selection_handler.selection_buffer.clear();
-
-    history.push_action(std::make_unique<AreaChange>(selection_handler.start(), clipboard));
-
-    // release();
-    updateGeometry = true;
-}
-void SelectionHandler::start_from_paste(glm::ivec2 pos, const MapSlice& data) {
-    release();
-    if(data.size() == glm::ivec2(0)) return;
-
-    _size = data.size();
-    start_pos = pos;
-
-    orig_pos = {start_pos, mode1_layer};
-
-    temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
-    history.push_action(std::make_unique<AreaChange>(orig_pos, temp_buffer));
-
-    // put copied tiles down
-    data.paste(game_data.maps[selectedMap], orig_pos);
-    selection_buffer = data;
-}
-void SelectionHandler::apply() {
-    if(start_pos != glm::ivec2(-1) && orig_pos != glm::ivec3(start_pos, mode1_layer)) {
-        history.push_action(std::make_unique<AreaMove>(glm::ivec3(start_pos, mode1_layer), orig_pos, temp_buffer, selection_buffer));
-    }
-    orig_pos = glm::ivec3(start_pos, mode1_layer);
 }
 
 static ImVec2 toImVec(const glm::vec2 vec) {
@@ -1001,18 +806,11 @@ static void handle_input() {
         }
 
         if(holding) {
-            if(GetKey(ImGuiKey_Escape)) {
-                selection_handler.release();
-            }
-            if(GetKey(ImGuiKey_Delete)) {
-                selection_handler.erase();
-                updateGeometry = true;
-            }
+            if(GetKey(ImGuiKey_Escape)) selection_handler.release();
+            if(GetKey(ImGuiKey_Delete)) selection_handler.erase();
             if(GetKey(ImGuiMod_Ctrl)) {
                 if(GetKeyDown(ImGuiKey_C)) clipboard.copy(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
-                if(GetKeyDown(ImGuiKey_X)) {
-                    selection_handler.cut();
-                }
+                if(GetKeyDown(ImGuiKey_X)) selection_handler.cut();
             }
             selection_handler.move(arrow_key_dir());
         }
@@ -1227,7 +1025,7 @@ b/g to move to background layer.");
         auto room = game_data.maps[selectedMap].getRoom(room_pos);
 
         if(!io.WantCaptureMouse && room != nullptr) {
-            if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE)) {
+            if(ImGui::IsKeyDown(ImGuiKey_MouseMiddle)) {
                 auto tp = glm::ivec2(mouse_world_pos.x % Room::size.x, mouse_world_pos.y % Room::size.y);
                 auto tile = room->tiles[0][tp.y][tp.x];
 
@@ -1250,7 +1048,7 @@ b/g to move to background layer.");
                     selection_handler.change_layer(lastLayer, mode1_layer);
                 }
             }
-            if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) {
+            if(ImGui::IsKeyDown(ImGuiKey_MouseRight)) {
                 selection_handler.release();
 
                 auto tp = glm::ivec2(mouse_world_pos.x % Room::size.x, mouse_world_pos.y % Room::size.y);
