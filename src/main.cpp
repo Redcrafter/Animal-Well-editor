@@ -89,10 +89,6 @@ static void onResize(GLFWwindow* window, int width, int height) {
     projection = glm::ortho<float>(-width / 2, width / 2, height / 2, -height / 2, 0.0f, 100.0f);
 }
 
-static ImVec2 toImVec(const glm::vec2 vec) {
-    return ImVec2(vec.x, vec.y);
-}
-
 static void load_data() {
     { // chroma key atlas texture
         auto tex = game_data.atlas.copy();
@@ -146,7 +142,10 @@ static bool load_game(const std::string& path) {
         load_data();
 
         selectedMap = 0;
-        auto& map = game_data.maps[selectedMap];
+
+        selection_handler.release();
+        history.clear();
+        auto& map = currentMap();
         camera.position = -(map.offset + map.size / 2) * Room::size * 8;
 
         return true;
@@ -492,6 +491,9 @@ class {
             game_data.load_folder(export_path);
             has_exported = true;
             load_data();
+
+            selection_handler.release();
+            history.clear();
         } catch(const std::exception& e) {
             error_dialog.error(e.what());
         }
@@ -507,7 +509,7 @@ class {
     }
 } saver;
 
-void full_map_screenshot() {
+static void full_map_screenshot() {
     static std::string export_path = std::filesystem::current_path().string() + "/map.png";
     std::string path;
     auto result = NFD::SaveDialog({{"png", {"png"}}}, export_path.c_str(), path, window);
@@ -521,7 +523,7 @@ void full_map_screenshot() {
     }
     export_path = path;
 
-    auto& map = game_data.maps[selectedMap];
+    auto& map = currentMap();
     auto size = glm::ivec2(map.size.x, map.size.y) * Room::size * 8;
 
     Textured_Framebuffer fb(size.x, size.y);
@@ -621,8 +623,10 @@ static ImGuiID DockSpaceOverViewport() {
         }
 
         if(ImGui::BeginMenu("Display")) {
+            int prevMap = selectedMap;
             if(ImGui::Combo("Map", &selectedMap, mapNames, 5)) {
-                history.clear();
+                selection_handler.release();
+                history.push_action(std::make_unique<SwitchLayer>(prevMap));
                 updateGeometry = true;
             }
 
@@ -655,6 +659,7 @@ static ImGuiID DockSpaceOverViewport() {
             ImGui::BeginDisabled(!game_data.loaded);
 
             if(ImGui::MenuItem("Randomize items")) {
+                selection_handler.release();
                 randomize();
             }
             if(ImGui::MenuItem("Export Full Map Screenshot")) {
@@ -667,10 +672,12 @@ static ImGuiID DockSpaceOverViewport() {
                 dump_tile_textures();
             }
             if(ImGui::MenuItem("Clear Map")) {
-                MapSlice slice;
-                auto& map = game_data.maps[selectedMap];
+                selection_handler.release();
 
-                for (auto &&room : map.rooms) {
+                auto& map = currentMap();
+                history.push_action(std::make_unique<MapClear>(map.rooms));
+
+                for(auto& room : map.rooms) {
                     room.bgId = 0;
                     room.waterLevel = 180;
                     room.lighting_index = 0;
@@ -729,18 +736,9 @@ static glm::ivec2 screen_to_world(glm::vec2 pos) {
     return glm::ivec2(glm::inverse(MVP) * mp) / 8;
 }
 
-// Returns true while the user holds down the key.
-static bool GetKey(ImGuiKey key) {
-    return ImGui::IsKeyDown(key);
-}
 // Returns true during the frame the user starts pressing down the key.
 static bool GetKeyDown(ImGuiKey key) {
     return ImGui::GetKeyData(key)->DownDuration == 0.0f;
-}
-// Returns true during the frame the user releases the key.
-static bool GetKeyUp(ImGuiKey key) {
-    auto dat = ImGui::GetKeyData(key);
-    return !dat->Down && dat->DownDurationPrev != -1;
 }
 
 static glm::ivec2 arrow_key_dir() {
@@ -771,10 +769,10 @@ static void handle_input() {
     if(io.WantCaptureMouse) return;
 
     if(mouse_mode == 0) {
-        if(GetKey(ImGuiKey_MouseLeft)) {
+        if(ImGui::IsKeyDown(ImGuiKey_MouseLeft)) {
             camera.position -= delta / camera.scale;
         }
-        if(GetKey(ImGuiKey_MouseRight)) {
+        if(ImGui::IsKeyDown(ImGuiKey_MouseRight)) {
             mode0_selection = screen_to_world(mousePos);
         }
 
@@ -782,7 +780,7 @@ static void handle_input() {
             mode0_selection += arrow_key_dir();
         }
 
-        if(GetKey(ImGuiKey_Escape)) {
+        if(GetKeyDown(ImGuiKey_Escape)) {
             mode0_selection = glm::ivec2(-1, -1);
         }
     } else if(mouse_mode == 1) {
@@ -791,11 +789,11 @@ static void handle_input() {
         const auto holding = selection_handler.holding();
         auto selecting = selection_handler.selecting();
 
-        if(!selecting && GetKey(ImGuiKey_MouseLeft) && GetKey(ImGuiMod_Shift)) { // select start
+        if(!selecting && ImGui::IsKeyDown(ImGuiKey_MouseLeft) && ImGui::IsKeyDown(ImGuiMod_Shift)) { // select start
             selection_handler.drag_begin(mouse_world_pos);
             selecting = true;
         }
-        if(selecting && !GetKey(ImGuiKey_MouseLeft)) { // select end
+        if(selecting && !ImGui::IsKeyDown(ImGuiKey_MouseLeft)) { // select end
             selection_handler.drag_end(mouse_world_pos);
         }
 
@@ -806,16 +804,16 @@ static void handle_input() {
         }
 
         if(holding) {
-            if(GetKey(ImGuiKey_Escape)) selection_handler.release();
-            if(GetKey(ImGuiKey_Delete)) selection_handler.erase();
-            if(GetKey(ImGuiMod_Ctrl)) {
-                if(GetKeyDown(ImGuiKey_C)) clipboard.copy(game_data.maps[selectedMap], selection_handler.start(), selection_handler.size());
+            if(GetKeyDown(ImGuiKey_Escape)) selection_handler.release();
+            if(GetKeyDown(ImGuiKey_Delete)) selection_handler.erase();
+            if(ImGui::IsKeyDown(ImGuiMod_Ctrl)) {
+                if(GetKeyDown(ImGuiKey_C)) clipboard.copy(currentMap(), selection_handler.start(), selection_handler.size());
                 if(GetKeyDown(ImGuiKey_X)) selection_handler.cut();
             }
             selection_handler.move(arrow_key_dir());
         }
 
-        if(GetKey(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_V)) {
+        if(ImGui::IsKeyDown(ImGuiMod_Ctrl) && GetKeyDown(ImGuiKey_V)) {
             selection_handler.start_from_paste(mouse_world_pos, clipboard);
 
             // selection_handler will push undo data once position is finalized
@@ -826,15 +824,15 @@ static void handle_input() {
             // holding & inside rect
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
 
-            if(GetKey(ImGuiKey_MouseLeft)) {
+            if(ImGui::IsKeyDown(ImGuiKey_MouseLeft)) {
                 selection_handler.move(mouse_world_pos - lastWorldPos);
             }
-        } else if(!selecting && GetKey(ImGuiKey_MouseLeft)) {
+        } else if(!selecting && ImGui::IsKeyDown(ImGuiKey_MouseLeft)) {
             camera.position -= delta / camera.scale;
         }
     }
 
-    if(GetKey(ImGuiMod_Ctrl)) {
+    if(ImGui::IsKeyDown(ImGuiMod_Ctrl)) {
         if(ImGui::IsKeyPressed(ImGuiKey_Z)) history.undo();
         if(ImGui::IsKeyPressed(ImGuiKey_Y)) history.redo();
 
@@ -843,7 +841,7 @@ static void handle_input() {
             updateGeometry = true;
         }
         if(GetKeyDown(ImGuiKey_S)) {
-            if(GetKey(ImGuiKey_ModShift))
+            if(ImGui::IsKeyDown(ImGuiKey_ModShift))
                 saver.export_explicit();
             else
                 saver.export_implicit();
@@ -851,15 +849,15 @@ static void handle_input() {
     }
 }
 
-void ColorEdit4(const char* label, glm::u8vec4& col, ImGuiColorEditFlags flags = 0) {
-    float col4[4] {col.x / 255.0f, col.y / 255.0f, col.z / 255.0f, col.w / 255.0f};
+static void ColorEdit4(const char* label, glm::u8vec4& col, ImGuiColorEditFlags flags = 0) {
+    float col4[4] {col.r / 255.0f, col.g / 255.0f, col.b / 255.0f, col.a / 255.0f};
 
     ImGui::ColorEdit4(label, col4, flags);
 
-    col.x = col4[0] * 255.f;
-    col.y = col4[1] * 255.f;
-    col.z = col4[2] * 255.f;
-    col.w = col4[3] * 255.f;
+    col.r = col4[0] * 255.f;
+    col.g = col4[1] * 255.f;
+    col.b = col4[2] * 255.f;
+    col.a = col4[3] * 255.f;
 }
 
 static void DrawPreviewWindow() {
@@ -871,6 +869,8 @@ static void DrawPreviewWindow() {
         mode0_selection = glm::ivec2(-1, -1);
         selection_handler.release();
     }
+
+    auto& map = currentMap();
 
     if(mouse_mode == 0) {
         ImGui::SameLine();
@@ -886,9 +886,9 @@ static void DrawPreviewWindow() {
         }
 
         auto room_pos = tile_location / Room::size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos);
+        auto room = map.getRoom(room_pos);
 
-        ImGui::Text("world pos %i %i", tile_location.x, tile_location.y);
+        ImGui::Text("world position %i %i", tile_location.x, tile_location.y);
 
         if(room != nullptr) {
             if(ImGui::CollapsingHeader("Room Data", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -899,7 +899,7 @@ static void DrawPreviewWindow() {
                 ImGui::InputScalar("water level", ImGuiDataType_U8, &room->waterLevel);
                 const uint8_t bg_min = 0, bg_max = 19;
                 if(ImGui::SliderScalar("background id", ImGuiDataType_U8, &room->bgId, &bg_min, &bg_max)) {
-                    renderBgs(game_data.maps[selectedMap]);
+                    renderBgs(map);
                 }
 
                 const uint8_t pallet_max = game_data.ambient.size() - 1;
@@ -958,13 +958,15 @@ static void DrawPreviewWindow() {
                     ImGui::SetTooltip("Properties that are stored for each instance of a given tile");
                 }
                 ImGui::Text("position %i %i %s", tp.x, tp.y, tile_layer == 0 ? "Foreground" : tile_layer == 1 ? "Background" : "N/A");
-                ImGui::Text("id %i", tile.tile_id);
-                ImGui::Text("param %i", tile.param);
+
+                ImGui::BeginDisabled();
+
+                ImGui::InputScalar("id", ImGuiDataType_U16, &tile.tile_id);
+                ImGui::InputScalar("param", ImGuiDataType_U8, &tile.param);
 
                 if(ImGui::BeginTable("tile_flags_table", 2)) {
                     int flags = tile.flags;
 
-                    ImGui::BeginDisabled(tile_layer == 2);
                     // clang-format off
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn(); ImGui::CheckboxFlags("horizontal_mirror", &flags, 1);
@@ -974,15 +976,11 @@ static void DrawPreviewWindow() {
                     ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_90", &flags, 4);
                     ImGui::TableNextColumn(); ImGui::CheckboxFlags("rotate_180", &flags, 8);
                     // clang-format on
-                    ImGui::EndDisabled();
-
-                    if(flags != tile.flags) {
-                        room->tiles[tile_layer][tp.y][tp.x].flags = flags;
-                        updateGeometry = true;
-                    }
 
                     ImGui::EndTable();
                 }
+
+                ImGui::EndDisabled();
             }
 
             if(ImGui::CollapsingHeader("Tile Data", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -992,11 +990,9 @@ static void DrawPreviewWindow() {
                 ImGui::BeginDisabled(tile_layer == 2);
                 auto& uv = game_data.uvs[tile.tile_id];
 
-                bool should_update = false;
-                should_update |= DrawUvFlags(uv);
-                should_update |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
-                should_update |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
-                if(should_update) updateGeometry = true;
+                updateGeometry |= DrawUvFlags(uv);
+                updateGeometry |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
+                updateGeometry |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
                 ImGui::EndDisabled();
             }
         }
@@ -1022,7 +1018,7 @@ b/g to move to background layer.");
         ImGui::Text("world position %i %i", mouse_world_pos.x, mouse_world_pos.y);
 
         auto room_pos = mouse_world_pos / Room::size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos);
+        auto room = map.getRoom(room_pos);
 
         if(!io.WantCaptureMouse && room != nullptr) {
             if(ImGui::IsKeyDown(ImGuiKey_MouseMiddle)) {
@@ -1106,9 +1102,7 @@ static void draw_water_level() {
         return;
     }
 
-    const Map& map = game_data.maps[selectedMap];
-
-    for(const Room& room : map.rooms) {
+    for(const Room& room : currentMap().rooms) {
         if(room.waterLevel >= 176) {
             continue;
         }
@@ -1122,6 +1116,7 @@ static void draw_water_level() {
 
 static void draw_overlay() {
     auto& io = ImGui::GetIO();
+    auto& map = currentMap();
 
     if(mouse_mode == 0) {
         glm::ivec2 tile_location = mode0_selection;
@@ -1134,7 +1129,7 @@ static void draw_overlay() {
         }
 
         auto room_pos = tile_location / Room::size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos);
+        auto room = map.getRoom(room_pos);
 
         if(room != nullptr) {
             auto tp = glm::ivec2(tile_location.x % 40, tile_location.y % 22);
@@ -1176,7 +1171,7 @@ static void draw_overlay() {
     } else if(mouse_mode == 1) {
         auto mouse_world_pos = screen_to_world(mousePos);
         auto room_pos = mouse_world_pos / Room::size;
-        auto room = game_data.maps[selectedMap].getRoom(room_pos);
+        auto room = map.getRoom(room_pos);
 
         if(room != nullptr) {
             if(!render_data->room_grid)
@@ -1202,8 +1197,6 @@ static void draw_overlay() {
     }
 
     if(render_data->room_grid) {
-        const auto& map = game_data.maps[selectedMap];
-
         for(int i = 0; i <= map.size.x; i++) {
             auto x = (map.offset.x + i) * 40 * 8;
             render_data->overlay.AddLine({x, map.offset.y * 22 * 8}, {x, (map.offset.y + map.size.y) * 22 * 8}, IM_COL32(255, 255, 255, 191), 1 / camera.scale);
@@ -1248,7 +1241,7 @@ static bool UpdateUIScaling() {
 }
 
 // Main code
-int runViewer() {
+static int runViewer() {
 #pragma region glfw/opengl setup
     glfwSetErrorCallback(glfw_error_callback);
     if(!glfwInit())
@@ -1371,6 +1364,8 @@ int runViewer() {
         if(game_data.loaded) {
             search_window.draw(game_data, [](int map, const glm::ivec2 pos) {
                 if(map != selectedMap) {
+                    selection_handler.release();
+                    history.push_action(std::make_unique<SwitchLayer>(selectedMap));
                     selectedMap = map;
                     updateGeometry = true;
                 }

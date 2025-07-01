@@ -14,7 +14,7 @@ void SelectionHandler::drag_end(glm::ivec2 pos) {
     orig_pos = {start_pos, mode1_layer};
 
     temp_buffer.fill({}, _size);
-    selection_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
+    selection_buffer.copy(currentMap(), orig_pos, _size);
 }
 
 void SelectionHandler::start_from_paste(glm::ivec2 pos, const MapSlice& data) {
@@ -26,11 +26,11 @@ void SelectionHandler::start_from_paste(glm::ivec2 pos, const MapSlice& data) {
 
     orig_pos = {start_pos, mode1_layer};
 
-    temp_buffer.copy(game_data.maps[selectedMap], orig_pos, _size);
+    temp_buffer.copy(currentMap(), orig_pos, _size);
     history.push_action(std::make_unique<AreaChange>(orig_pos, temp_buffer));
 
     // put copied tiles down
-    data.paste(game_data.maps[selectedMap], orig_pos);
+    data.paste(currentMap(), orig_pos);
     selection_buffer = data;
 }
 
@@ -52,13 +52,9 @@ void SelectionHandler::erase() {
     apply();
 
     // orign_pos == current_pos after apply
-    temp_buffer.paste(game_data.maps[selectedMap], orig_pos); // put original data back
-    if(!selection_buffer.empty()) {
-        history.push_action(std::make_unique<AreaChange>(orig_pos, selection_buffer));
-        // selection_buffer.fill({});
-        // selection_buffer.paste(game_data.maps[selectedMap], orig_pos);
-        updateGeometry = true;
-    }
+    temp_buffer.paste(currentMap(), orig_pos); // put original data back
+    history.push_action(std::make_unique<AreaChange>(orig_pos, selection_buffer));
+    updateGeometry = true;
     release();
 }
 
@@ -72,7 +68,7 @@ void SelectionHandler::change_layer(int from, int to) {
     if(from == to) return;
     if(!holding()) return;
 
-    auto& map = game_data.maps[selectedMap];
+    auto& map = currentMap();
     temp_buffer.paste(map, glm::ivec3(start_pos, from)); // put original data back
     temp_buffer.copy(map, glm::ivec3(start_pos, to), _size); // store underlying
     selection_buffer.paste(map, glm::ivec3(start_pos, to)); // place preview on top
@@ -81,7 +77,7 @@ void SelectionHandler::change_layer(int from, int to) {
 
 void SelectionHandler::move(glm::ivec2 delta) {
     if(delta == glm::ivec2(0, 0)) return;
-    auto& map = game_data.maps[selectedMap];
+    auto& map = currentMap();
 
     temp_buffer.paste(map, glm::ivec3(start_pos, mode1_layer)); // put original data back
 

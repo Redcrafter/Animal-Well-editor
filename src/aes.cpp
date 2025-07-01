@@ -56,7 +56,7 @@ auto expandKey(const std::array<uint8_t, 16>& key) {
     return Key_Schedule;
 }
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(__clang__)
 inline __m128i operator^(__m128i a, __m128i b) {
     return _mm_xor_si128(a, b);
 }

@@ -207,9 +207,9 @@ static void render_lamp(MapTile tile, glm::ivec2 pos, int layer, const Map& map,
 
     render_tile(tile, pos, layer, map, game_data);
     if(height > 0) {
-        render_tile({44, 0, {tile.horizontal_mirror, false, false, false}}, {pos.x, pos.y - height}, layer, map, game_data);
+        render_tile({44, 0, {{tile.horizontal_mirror, false, false, false}}}, {pos.x, pos.y - height}, layer, map, game_data);
 
-        MapTile tile_ {45, 0, {tile.horizontal_mirror, false, false, false}};
+        MapTile tile_ {45, 0, {{tile.horizontal_mirror, false, false, false}}};
         for(int i = 1; i < height; ++i) {
             render_tile(tile_, {pos.x, pos.y - i}, layer, map, game_data);
         }
@@ -266,8 +266,6 @@ void renderMap(const Map& map, const GameData& game_data) {
                     }
 
                     if(game_data.sprites.contains(tile.tile_id)) {
-                        auto& sprite = game_data.sprites.at(tile.tile_id);
-
                         render_sprite_custom([&](glm::ivec2 pos_, glm::u16vec2 size, glm::ivec2 uv_pos, glm::ivec2 uv_size) {
                             pos_ += pos * 8;
                             render_data->add_face(pos_, pos_ + glm::ivec2(size), uv_pos, uv_pos + uv_size);

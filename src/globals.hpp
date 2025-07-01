@@ -12,3 +12,8 @@ inline uint8_t mode1_layer = 0;
 
 // stores copied map tiles
 inline MapSlice clipboard;
+
+inline Map& currentMap() {
+    assert(selectedMap >= 0 && selectedMap < game_data.maps.size());
+    return game_data.maps[selectedMap];
+}

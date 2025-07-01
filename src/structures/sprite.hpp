@@ -117,7 +117,7 @@ struct SpriteData {
         ptr += subs_size;
 
         std::memcpy(ptr, layers.data(), layer_size);
-        ptr += layer_size;
+        // ptr += layer_size;
 
         return out;
     }

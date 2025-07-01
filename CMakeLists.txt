@@ -87,9 +87,10 @@ target_link_libraries(editor PRIVATE glfw ${LIBS} cmrc_shaders cmrc_font glm)
 set_target_properties(editor PROPERTIES WIN32_EXECUTABLE TRUE) 
 
 if(MSVC)
-    set(PROJECT_WARNINGS /permissive- /W4 /w14640)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(PROJECT_WARNINGS -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic)
+    set(PROJECT_WARNINGS /permissive- /W4 /w14640 /MP)
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(PROJECT_WARNINGS -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic -maes -msse4.1 -stdlib=libc++)
 endif()
 
 target_compile_options(editor PRIVATE ${PROJECT_WARNINGS})

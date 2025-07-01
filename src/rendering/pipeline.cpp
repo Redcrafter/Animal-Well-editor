@@ -603,7 +603,6 @@ void doRender(bool updateGeometry, GameData& game_data, int selectedMap, glm::ma
 
         rd.fg_buffer.tex.Bind();
 
-        auto& map = game_data.maps[selectedMap];
         RenderQuad(map.offset * Room::size * 8, (map.offset + map.size) * Room::size * 8);
     } else {
         glClearColor(0.45f, 0.45f, 0.45f, 1.00f);

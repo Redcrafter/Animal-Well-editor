@@ -1,6 +1,7 @@
 #include "tile_list.hpp"
 
 #include <regex>
+#include <format>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
@@ -123,20 +124,20 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
     ImGui::SameLine();
     HelpMarker("Left click a tile to copy it to edit mode.\nMiddle click a tile to open it in the tile viewer.\nPress 'Del' while hovering over a tile to delete it.\nTiles and groups can be reordered by dragging them around.");
 
-    auto g = ImGui::GetCurrentContext();
-    auto window = g->CurrentWindow;
+    auto context = ImGui::GetCurrentContext();
+    auto window = context->CurrentWindow;
 
     auto width = window->WorkRect.GetWidth();
-    auto pad = g->Style.FramePadding;
+    auto pad = context->Style.FramePadding;
 
-    auto mp = g->IO.MousePos;
+    auto mp = context->IO.MousePos;
     auto el_width = box_size + pad.x * 2;
 
     glm::ivec2 insert_pos {-1, -1};
     int group_insert_pos = -1;
     bool drag_end = false;
 
-    for(int i = 0; i < groups.size(); i++) {
+    for(size_t i = 0; i < groups.size(); i++) {
         auto& group = groups[i];
         ImGui::PushID(i);
 
@@ -231,13 +232,13 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
 
             if(y > 0 && y < height / 2) {
                 // top half
-                auto y1 = sp.y - g->Style.ItemSpacing.y / 2;
+                auto y1 = sp.y - context->Style.ItemSpacing.y / 2;
                 window->DrawList->AddRectFilled(ImVec2(sp.x, y1 - 1), ImVec2(sp.x + width, y1 + 1), IM_COL32_WHITE);
                 group_insert_pos = i;
             }
             if(y < height && y > height / 2) {
                 // bottom half
-                auto y1 = ep.y - g->Style.ItemSpacing.y / 2;
+                auto y1 = ep.y - context->Style.ItemSpacing.y / 2;
                 window->DrawList->AddRectFilled(ImVec2(ep.x, y1 - 1), ImVec2(ep.x + width, y1 + 1), IM_COL32_WHITE);
                 group_insert_pos = i + 1;
             }
@@ -247,7 +248,7 @@ void TileList::draw(const GameData& game_data, MapTile& mode1_placing) {
     }
 
     if(ImGui::Button("+")) {
-        groups.push_back(TileGroup {"group " + std::to_string(groups.size() + 1)});
+        groups.push_back(TileGroup { std::format("group {}", groups.size() + 1), {}});
     }
 
     if(drag_end) {

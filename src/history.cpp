@@ -2,6 +2,48 @@
 #include "selection.hpp"
 #include "globals.hpp"
 
+static void highlightArea(glm::ivec3 start, glm::ivec2 size) {
+    // select region that has been undone. only trigger change if actually moved
+    mode1_layer = start.z;
+    selection_handler.drag_begin(start);
+    selection_handler.drag_end(glm::ivec2(start) + size - 1);
+}
+
+void AreaMove::apply() {
+    auto& map = currentMap();
+
+    dest_data.swap(map, dest);
+    src_data.swap(map, src);
+
+    std::swap(src_data, dest_data);
+    std::swap(src, dest);
+
+    highlightArea(dest, dest_data.size());
+}
+
+void AreaChange::apply() {
+    tiles.swap(currentMap(), position);
+    highlightArea(position, tiles.size());
+}
+
+void SingleChange::apply() {
+    auto& map = currentMap();
+
+    auto t = map.getTile(position.z, position.x, position.y);
+    map.setTile(position.z, position.x, position.y, tile);
+    tile = t.value();
+
+    highlightArea(position, {1, 1});
+}
+
+void MapClear::apply() {
+    std::swap(currentMap().rooms, rooms);
+}
+
+void SwitchLayer::apply() {
+    std::swap(selectedMap, from);
+}
+
 void HistoryManager::push_action(std::unique_ptr<HistoryItem> item) {
     undo_buffer.push_back(std::move(item));
     if(undo_buffer.size() > max_undo_size)
@@ -17,14 +59,8 @@ void HistoryManager::undo() {
     auto el = std::move(undo_buffer.back());
     undo_buffer.pop_back();
 
-    auto area = el->apply(game_data.maps[selectedMap]);
+    el->apply();
     updateGeometry = true;
-
-    // select region that has been undone. only trigger change if actually moved
-    mode1_layer = area.first.z;
-    selection_handler.drag_begin(area.first);
-    selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
-
     redo_buffer.push_back(std::move(el));
 }
 void HistoryManager::redo() {
@@ -34,14 +70,8 @@ void HistoryManager::redo() {
     auto el = std::move(redo_buffer.back());
     redo_buffer.pop_back();
 
-    auto area = el->apply(game_data.maps[selectedMap]);
+    el->apply();
     updateGeometry = true;
-
-    // selct region that has been redone. only trigger change if actually moved
-    mode1_layer = area.first.z;
-    selection_handler.drag_begin(area.first);
-    selection_handler.drag_end(glm::ivec2(area.first) + area.second - 1);
-
     undo_buffer.push_back(std::move(el));
 }
 void HistoryManager::clear() {

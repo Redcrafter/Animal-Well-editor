@@ -11,7 +11,7 @@ void ErrorDialog::drawPopup() {
         for(auto& e : errors) {
             ImGui::Text(e.error ? "[Error]" : "[Warning]");
             ImGui::SameLine();
-            ImGui::Text(e.text.c_str());
+            ImGui::Text("%s", e.text.c_str());
         }
 
         if(ImGui::Button("Ok")) {

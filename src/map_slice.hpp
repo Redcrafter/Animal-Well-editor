@@ -68,12 +68,4 @@ class MapSlice {
     }
 
     glm::ivec2 size() const { return _size; }
-
-    // returns true size = 0 or all tiles are 0
-    bool empty() const {
-        for (auto &i : data) {
-            if(i != MapTile()) return false;
-        }
-        return true;
-    }
 };
