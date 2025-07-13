@@ -81,6 +81,21 @@ void Image::save_png(const std::string& path) const {
     stbi_write_png(path.c_str(), width_, height_, 4, data_, width_ * 4);
 }
 
+static void write_func(void* context, void* data, int size) {
+    std::vector<uint8_t>& res = *(std::vector<uint8_t>*)context;
+
+    auto ptr = (uint8_t*)data;
+    for(size_t i = 0; i < size; i++) {
+        res.push_back(ptr[i]);
+    }
+}
+
+std::vector<uint8_t> Image::save_png() const {
+    std::vector<uint8_t> res;
+    stbi_write_png_to_func(&write_func, &res, width_, height_, 4, data_, width_ * 4);
+    return res;
+}
+
 void Image::copy_to(Image& other, int x, int y) const {
     assert(x >= 0 && y >= 0 && x + width_ <= other.width_ && y + height_ <= other.height_);
     for(int y1 = 0; y1 < height_; ++y1) {

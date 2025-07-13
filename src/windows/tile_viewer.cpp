@@ -7,6 +7,7 @@
 #include <imgui_internal.h>
 
 #include "../rendering/renderData.hpp"
+#include "texture_importer.hpp"
 
 static ImVec2 toImVec(const glm::vec2 vec) {
     return ImVec2(vec.x, vec.y);
@@ -125,6 +126,10 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
     should_update |= DrawUvFlags(uv);
     should_update |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
     should_update |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
+
+    if(ImGui::Button("Import image")) {
+        texture_importer.open(selected_tile);
+    }
 
     if(!game_data.sprites.contains(selected_tile)) {
         ImGui::SeparatorText("preview");

@@ -172,7 +172,8 @@ std::unordered_map<int, size_t> knownHashes = {
     { 217, 5035524815660143289ull },
     { 175, 235842778747612680ull },
     { 254, 6191836559123737457ull },
-    { 179, 15075917697486370393ull }
+    { 179, 15075917697486370393ull },
+    { 255, 12559317535332705923ull }
 };
 
 std::vector<uint8_t> readFile(const std::string& path) {
@@ -297,6 +298,8 @@ void GameData::save_folder(const std::string& path) {
 
     writeFileIfChanged(p / "254.uvs", uv_data::save(uvs), 254);
     writeFileIfChanged(p / "179.ambient", LightingData::save(ambient), 179);
+
+    writeFileIfChanged(p / "255.png", atlas.save_png(), 255);
 
     // no need to save textures since the editor can't change them anyway
 }

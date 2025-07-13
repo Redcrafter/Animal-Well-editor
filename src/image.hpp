@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 class Image {
     uint32_t* data_ = nullptr;
@@ -25,6 +26,7 @@ class Image {
     ~Image();
 
     void save_png(const std::string& path) const;
+    std::vector<uint8_t> save_png() const;
 
     // copy this image to another image
     void copy_to(Image& other, int x, int y) const;

@@ -34,6 +34,7 @@
 #include "windows/search.hpp"
 #include "windows/tile_list.hpp"
 #include "windows/tile_viewer.hpp"
+#include "windows/texture_importer.hpp"
 
 #ifdef __EMSCRIPTEN__
 #include "examples/libs/emscripten/emscripten_mainloop_stub.h"
@@ -94,45 +95,8 @@ static void onResize(GLFWwindow* window, int width, int height) {
 }
 
 static void load_data() {
-    { // chroma key atlas texture
-        auto tex = game_data.atlas.copy();
-        // chroma key cyan and replace with alpha
-        auto vptr = tex.data();
-        for(int i = 0; i < tex.width() * tex.height(); ++i) {
-            if(vptr[i] == 0xFFFFFF00) {
-                vptr[i] = 0;
-            }
-        }
-        render_data->textures.atlas.Load(tex);
-    }
-
-    render_data->textures.bunny.Load(game_data.bunny);
-    render_data->textures.time_capsule.Load(game_data.time_capsule);
-
-    auto& bg_tex = render_data->textures.background;
-    bg_tex.Bind();
-
-    bg_tex.LoadSubImage(320 * 0, 180 * 0, game_data.backgrounds[0]); // 13
-    bg_tex.LoadSubImage(320 * 1, 180 * 0, game_data.backgrounds[1]); // 14
-    bg_tex.LoadSubImage(320 * 2, 180 * 0, game_data.backgrounds[2]); // 7, 8
-    bg_tex.LoadSubImage(320 * 3, 180 * 0, game_data.backgrounds[3]); // 1
-
-    bg_tex.LoadSubImage(320 * 0, 180 * 1, game_data.backgrounds[4]); // 6
-    bg_tex.LoadSubImage(320 * 1, 180 * 1, game_data.backgrounds[5]); // 9, 11
-    bg_tex.LoadSubImage(320 * 2, 180 * 1, game_data.backgrounds[6]); // 10
-    bg_tex.LoadSubImage(320 * 3, 180 * 1, game_data.backgrounds[7]); // 16
-
-    bg_tex.LoadSubImage(320 * 0, 180 * 2, game_data.backgrounds[8]); // 4, 5
-    bg_tex.LoadSubImage(320 * 1, 180 * 2, game_data.backgrounds[9]); // 15
-    bg_tex.LoadSubImage(320 * 2, 180 * 2, game_data.backgrounds[10]); // 19
-    bg_tex.LoadSubImage(320 * 3, 180 * 2, game_data.backgrounds[11]); // 2, 3
-
-    bg_tex.LoadSubImage(320 * 0, 180 * 3, game_data.backgrounds[12]); // 17
-    bg_tex.LoadSubImage(320 * 1, 180 * 3, game_data.backgrounds[13]); // 18
-    bg_tex.LoadSubImage(320 * 2, 180 * 3, game_data.backgrounds[14]); // 12
-
+    render_data->textures.update();
     history.clear();
-
     updateGeometry = true;
 }
 
@@ -230,100 +194,6 @@ static void dump_assets() {
     } catch(std::exception& e) {
         error_dialog.error(e.what());
     }
-}
-
-static auto calc_tile_size(int i) {
-    auto uv = game_data.uvs[i];
-    auto size = uv.size;
-
-    // clang-format off
-    switch(i) {
-        case 793: // time capsule
-            size = {64, 32};
-            break;
-        case 794: // big bunny
-            size = {256, 256};
-            break;
-
-        case 610: case 615: case 616: // doors
-            size.x += 3;
-            break;
-        case 150: // sign
-        case 151: // snail
-        case 6: case 7: case 8: case 9: // small indicator blocks
-        case 38: case 46: case 202: case 548: case 554: case 561: case 624: case 731: // lamps
-        case 348:
-        case 85:
-        case 118: case 694: // buttons
-        case 167:
-            size.x *= 2;
-            break;
-        case 411: case 412: case 413: case 414: // big flames
-        case 628: case 629: case 630: case 631: // small flames
-        case 42:
-        case 125: // candle
-        case 426:
-            size.x *= 3;
-            break;
-        case 224: // heart
-        case 226:
-        case 164:
-        case 128:
-            size.x *= 4;
-            break;
-        case 129:
-        case 138: // bear
-        case 225:
-        case 241: // panda
-        case 370:
-        case 468: // maybe 5? idk
-        case 217:
-            size.x *= 6;
-            break;
-        case 245:
-            size.x *= 7;
-            break;
-        case 278:
-        case 351:
-        case 343:
-        case 783:
-        case 218:
-            size.x *= 8;
-            break;
-        case 244:
-        case 216:
-            size.x *= 10;
-            break;
-        case 282: // water drop
-            size.x *= 13;
-            break;
-
-        case 89: case 160: case 277: case 346: case 354: // pipes
-            size.y *= 4;
-            break;
-
-        case 315: // egg atlas
-            size *= 8;
-            break;
-
-        case 775: // 65th egg uv. only has uv
-            break;
-
-        default:
-            if(!game_data.sprites.contains(i)) { // not a sprite
-                if(uv.flags & (contiguous | self_contiguous)) {
-                    size.x *= 4;
-                    size.y *= 4;
-                }
-                if(uv.flags & has_normals) {
-                    size.y *= 2;
-                }
-            }
-            break;
-    }
-    // clang-format on
-
-    return size;
 }
 
 static void dump_tile_textures() {
@@ -1412,6 +1282,7 @@ static int runViewer() {
             });
             tile_list.draw(game_data, mode1_placing);
             tile_viewer.draw(game_data, updateGeometry);
+            texture_importer.draw();
             DrawPreviewWindow();
 
             draw_overlay();

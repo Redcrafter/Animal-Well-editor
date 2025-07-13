@@ -1,5 +1,6 @@
 #pragma once
 #include "../glStuff.hpp"
+#include "../globals.hpp"
 #include <memory>
 
 enum class BufferType {
@@ -36,6 +37,44 @@ struct Textures {
     Texture background {320 * 4, 180 * 4};
     Texture bunny;
     Texture time_capsule;
+
+    void update() {
+        { // chroma key atlas texture
+            auto tex = game_data.atlas.copy();
+            // chroma key cyan and replace with alpha
+            auto vptr = tex.data();
+            for(int i = 0; i < tex.width() * tex.height(); ++i) {
+                if(vptr[i] == 0xFFFFFF00) {
+                    vptr[i] = 0;
+                }
+            }
+            atlas.Load(tex);
+        }
+
+        bunny.Load(game_data.bunny);
+        time_capsule.Load(game_data.time_capsule);
+
+        background.Bind();
+
+        background.LoadSubImage(320 * 0, 180 * 0, game_data.backgrounds[0]); // 13
+        background.LoadSubImage(320 * 1, 180 * 0, game_data.backgrounds[1]); // 14
+        background.LoadSubImage(320 * 2, 180 * 0, game_data.backgrounds[2]); // 7, 8
+        background.LoadSubImage(320 * 3, 180 * 0, game_data.backgrounds[3]); // 1
+
+        background.LoadSubImage(320 * 0, 180 * 1, game_data.backgrounds[4]); // 6
+        background.LoadSubImage(320 * 1, 180 * 1, game_data.backgrounds[5]); // 9, 11
+        background.LoadSubImage(320 * 2, 180 * 1, game_data.backgrounds[6]); // 10
+        background.LoadSubImage(320 * 3, 180 * 1, game_data.backgrounds[7]); // 16
+
+        background.LoadSubImage(320 * 0, 180 * 2, game_data.backgrounds[8]); // 4, 5
+        background.LoadSubImage(320 * 1, 180 * 2, game_data.backgrounds[9]); // 15
+        background.LoadSubImage(320 * 2, 180 * 2, game_data.backgrounds[10]); // 19
+        background.LoadSubImage(320 * 3, 180 * 2, game_data.backgrounds[11]); // 2, 3
+
+        background.LoadSubImage(320 * 0, 180 * 3, game_data.backgrounds[12]); // 17
+        background.LoadSubImage(320 * 1, 180 * 3, game_data.backgrounds[13]); // 18
+        background.LoadSubImage(320 * 2, 180 * 3, game_data.backgrounds[14]); // 12
+    }
 };
 
 struct Waterfall {
