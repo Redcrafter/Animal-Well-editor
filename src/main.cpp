@@ -170,7 +170,7 @@ static void dump_assets() {
                 ext = ".shader";
             } else if(ptr[0] == 0 && ptr[1] == 0x0B && ptr[2] == 0xB0 && ptr[3] == 0) {
                 assert(item.type == AssetType::MapData || item.type == AssetType::Encrypted_MapData);
-                ext = ".uvs";
+                ext = ".tiles";
             } else if(ptr[0] == 'P' && ptr[1] == 'K' && ptr[2] == 3 && ptr[3] == 4) {
                 assert(item.type == AssetType::Encrypted_Text);
                 ext = ".xps";
