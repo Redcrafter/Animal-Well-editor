@@ -9,7 +9,7 @@
 #include <map>
 #include <chrono>
 
-std::map<const char*, float> times;
+static std::map<const char*, float> times;
 
 void drawTimes() {
     if(ImGui::Begin("Render times")) {

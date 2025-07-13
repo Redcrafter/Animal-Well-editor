@@ -35,6 +35,10 @@
 #include "windows/tile_list.hpp"
 #include "windows/tile_viewer.hpp"
 
+#ifdef __EMSCRIPTEN__
+#include "examples/libs/emscripten/emscripten_mainloop_stub.h"
+#endif
+
 GLFWwindow* window;
 
 struct {
@@ -1208,13 +1212,13 @@ static void draw_overlay() {
     }
 }
 
-static bool UpdateUIScaling() {
+static void UpdateUIScaling() {
     float xscale, yscale;
     glfwGetWindowContentScale(window, &xscale, &yscale);
     assert(xscale == yscale);
 
     static float oldScale = 1.0;
-    if(xscale == oldScale) return true;
+    if(xscale == oldScale) return;
     oldScale = xscale;
 
     ImGuiIO& io = ImGui::GetIO();
@@ -1234,10 +1238,8 @@ static bool UpdateUIScaling() {
 
         ImFontConfig config {};
         config.FontDataOwnedByAtlas = false;
-        io.Fonts->AddFontFromMemoryTTF((void*)dat.begin(), dat.size(), std::floor(14.0f * xscale), &config);
+        io.Fonts->AddFontFromMemoryTTF((void*)dat.begin(), dat.size(), std::floor(15.0f * xscale), &config);
     }
-
-    return ImGui_ImplOpenGL3_CreateFontsTexture();
 }
 
 // Main code
@@ -1247,15 +1249,38 @@ static int runViewer() {
     if(!glfwInit())
         return 1;
 
+    // Decide GL+GLSL versions
+#if defined(IMGUI_IMPL_OPENGL_ES2)
+    // GL ES 2.0 + GLSL 100 (WebGL 1.0)
+    const char* glsl_version = "#version 100";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+#elif defined(IMGUI_IMPL_OPENGL_ES3)
+    // GL ES 3.0 + GLSL 300 es (WebGL 2.0)
+    const char* glsl_version = "#version 300 es";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+#elif defined(__APPLE__)
+    // GL 3.2 + GLSL 150
+    const char* glsl_version = "#version 150";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
+#else
     // GL 3.0 + GLSL 130
     const char* glsl_version = "#version 130";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     // glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
     // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
+#endif
 
     // Create window with graphics context
-    window = glfwCreateWindow(1280, 720, "Animal Well map viewer", nullptr, nullptr);
+    float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
+    window = glfwCreateWindow(main_scale * 1280, main_scale * 720, "Animal Well map viewer", nullptr, nullptr);
     if(window == nullptr)
         return 1;
     glfwMakeContextCurrent(window);
@@ -1274,7 +1299,7 @@ static int runViewer() {
     // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     glfwSetFramebufferSizeCallback(window, onResize);
-    onResize(window, 1280, 720);
+    onResize(window, main_scale * 1280, main_scale * 720);
 #pragma endregion
 
 #pragma region imgui setup
@@ -1284,11 +1309,16 @@ static int runViewer() {
     tile_list.init(); // load settings handler for tiles
 
     ImGuiIO& io = ImGui::GetIO();
-    (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
-    if(glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) // do not enable viewports for wayland
+
+    // io.ConfigDpiScaleFonts = true;
+    io.ConfigDpiScaleViewports = true;
+
+#ifndef __EMSCRIPTEN__
+    if(glfwGetPlatform() != GLFW_PLATFORM_WAYLAND)          // do not enable viewports for wayland
         io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // Enable Multi-Viewport / Platform Windows
+#endif
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -1304,7 +1334,7 @@ static int runViewer() {
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
 #ifdef __EMSCRIPTEN__
-    ImGui_ImplGlfw_InstallEmscriptenCanvasResizeCallback("#canvas");
+    ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
 #endif
     ImGui_ImplOpenGL3_Init(glsl_version);
 
@@ -1327,7 +1357,15 @@ static int runViewer() {
     }
 
     // Main loop
-    while(!glfwWindowShouldClose(window)) {
+#ifdef __EMSCRIPTEN__
+    // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.
+    // You may manually call LoadIniSettingsFromMemory() to load settings from your own storage.
+    io.IniFilename = nullptr;
+    EMSCRIPTEN_MAINLOOP_BEGIN
+#else
+    while(!glfwWindowShouldClose(window))
+#endif
+    {
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
@@ -1404,6 +1442,9 @@ static int runViewer() {
 
         glfwSwapBuffers(window);
     }
+#ifdef __EMSCRIPTEN__
+    EMSCRIPTEN_MAINLOOP_END;
+#endif
 
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();

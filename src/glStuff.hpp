@@ -90,7 +90,7 @@ struct Texture {
     Texture(int width, int height) : width(width), height(height) {
         glGenTextures(1, &id.value);
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     }
@@ -195,6 +195,12 @@ struct ShaderProgram {
         auto vertexCode = std::string(vs.begin(), vs.end());
         auto fs_ = fs.open(fragmentPath);
         auto fragmentCode = std::string(fs_.begin(), fs_.end());
+
+#ifdef __EMSCRIPTEN__
+        // replace shader version
+        vertexCode = "#version 300 es\n//" + vertexCode;
+        fragmentCode = "#version 300 es\nprecision mediump float;\n//" + fragmentCode;
+#endif
 
         const char* vShaderCode = vertexCode.c_str();
         const char* fShaderCode = fragmentCode.c_str();

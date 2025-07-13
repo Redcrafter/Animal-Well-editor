@@ -24,7 +24,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
-  GIT_TAG        v1.91.9b-docking
+  GIT_TAG        v1.92.0-docking
 )
 FetchContent_Declare(
   glfw
@@ -42,24 +42,32 @@ FetchContent_Declare(
   GIT_TAG        v1.1.7
 )
 
-FetchContent_MakeAvailable(cmrc stb imgui glfw glm proggyfonts)
+FetchContent_MakeAvailable(cmrc stb imgui glm proggyfonts)
 
 find_package(OpenGL REQUIRED)
 
-if(WIN32)
-    set(LIBS OpenGL32)
-elseif(UNIX)
-    find_package(GTK2 REQUIRED gtk)
+if(EMSCRIPTEN)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_GLFW=3 -s ASSERTIONS=1 -s WASM=1 -s ASYNCIFY -s ASYNCIFY_IMPORTS=[\"emscripten_asm_const_ptr\",\"__syscall_openat\"] -g -gsource-map -s MIN_WEBGL_VERSION=2 -s MAX_WEBGL_VERSION=2 -s ALLOW_MEMORY_GROWTH")
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+else()
+  FetchContent_MakeAvailable(glfw)
 
-    set(INCLUDES ${GTK2_INCLUDE_DIRS})
-    set(LIBS GL ${GTK2_LIBRARIES} stdc++fs pthread)
+  if(WIN32)
+      set(LIBS OpenGL32)
+  elseif(UNIX)
+      find_package(GTK2 REQUIRED gtk)
 
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1")
+      set(INCLUDES ${GTK2_INCLUDE_DIRS})
+      set(LIBS GL ${GTK2_LIBRARIES} stdc++fs pthread)
+
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1")
+  endif()
+
+  set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
 endif()
-
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
 file(GLOB_RECURSE Common_sources 
     "./src/*.cpp" "./src/**/*.cpp"
@@ -87,10 +95,15 @@ target_link_libraries(editor PRIVATE glfw ${LIBS} cmrc_shaders cmrc_font glm)
 set_target_properties(editor PROPERTIES WIN32_EXECUTABLE TRUE) 
 
 if(MSVC)
-    set(PROJECT_WARNINGS /permissive- /W4 /w14640 /MP)
-endif()
-if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(PROJECT_WARNINGS -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic -maes -msse4.1 -stdlib=libc++)
+    target_compile_options(editor PRIVATE /permissive- /W4 /w14640 /MP)
 endif()
 
-target_compile_options(editor PRIVATE ${PROJECT_WARNINGS})
+if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" AND NOT EMSCRIPTEN)
+    target_compile_options(editor PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1 -stdlib=libc++")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(editor PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1")
+endif()
