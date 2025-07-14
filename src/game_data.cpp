@@ -235,10 +235,16 @@ GameData GameData::load_exe(const std::string& path) {
     return data;
 }
 
+static bool isDigit(char c) {
+    return c >= '0' && c <= '9';
+}
+
 static int readInt(const std::string& str) {
+    if(!isDigit(str[0]))
+        return -1;
     int res = 0;
     for (auto &c : str) {
-        if(c >= '0' && c <= '9') {
+        if(isDigit(c)) {
             res *= 10;
             res += c - '0';
         } else {
@@ -253,7 +259,11 @@ void GameData::load_folder(const std::string& path) {
 
     std::unordered_map<int, std::string> files;
     for(auto& item : std::filesystem::directory_iterator(path)) {
-        files[readInt(item.path().filename().string())] = item.path().string();
+        if(!item.is_regular_file()) continue;
+
+        int id = readInt(item.path().filename().string());
+        if(id == -1) continue;
+        files[id] = item.path().string();
     }
 
     auto getAsset = [&](int id) -> std::optional<std::vector<uint8_t>> {
@@ -291,20 +301,42 @@ void GameData::load_folder(const std::string& path) {
     if(auto bg = getAsset(26)) backgrounds[14] = Image(*bg);
 }
 
-void GameData::save_folder(const std::string& path) {
+void GameData::save_folder(const std::string& path) const {
     auto p = std::filesystem::path(path);
+    std::filesystem::create_directories(p);
+    backup_assets(path);
 
     for(size_t i = 0; i < 5; i++) {
         writeFileIfChanged(p / std::format("{}.map", mapIds[i]), maps[i].save(), mapIds[i]);
     }
     for(const auto [_, asset_id, tile_id] : spriteMapping) {
-        writeFileIfChanged(p / std::format("{}.sprite", asset_id), sprites[tile_id].save(), asset_id);
+        writeFileIfChanged(p / std::format("{}.sprite", asset_id), sprites.at(tile_id).save(), asset_id);
     }
 
     writeFileIfChanged(p / "254.tiles", uv_data::save(uvs), 254);
     writeFileIfChanged(p / "179.ambient", LightingData::save(ambient), 179);
 
     writeFileIfChanged(p / "255.png", atlas.save_png(), 255);
+}
+
+void GameData::backup_assets(const std::string& path) const {
+    auto p = std::filesystem::path(path);
+
+    const auto now = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+    auto bp = p / "backups" / std::format("{:%Y-%m-%d %H-%M}", now);
+
+    // backup with same name already exists. keep old backup 
+    if(std::filesystem::exists(bp)) return;
+    std::filesystem::create_directories(bp);
+
+    for(auto& item : std::filesystem::directory_iterator(path)) {
+        if(!item.is_regular_file()) continue;
+
+        int id = readInt(item.path().filename().string());
+        if(id == -1) continue;
+
+        std::filesystem::copy_file(item, bp / item.path().filename());
+    }
 }
 
 std::vector<uint8_t> GameData::get_asset(int id) {

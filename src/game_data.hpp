@@ -37,11 +37,13 @@ class GameData {
 
     static GameData load_exe(const std::string& path);
     void load_folder(const std::string& path);
-    void save_folder(const std::string& path);
+    void save_folder(const std::string& path) const;
 
     std::vector<uint8_t> get_asset(int id);
 
   private:
+    void backup_assets(const std::string& path) const;
+
     bool testAssetHashes();
     void bufferFromExe();
 };

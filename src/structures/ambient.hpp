@@ -30,7 +30,7 @@ struct LightingData {
 
         return {(LightingData*)ptr, ((LightingData*)ptr) + count};
     }
-    static std::vector<uint8_t> save(const std::span<LightingData>& data) {
+    static std::vector<uint8_t> save(std::span<const LightingData> data) {
         std::vector<uint8_t> res(4 + 8 + data.size_bytes());
 
         auto ptr = res.data();
