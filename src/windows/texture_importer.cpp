@@ -136,7 +136,7 @@ void TextureImporter::apply() {
 void TextureImporter::draw() {
     if(!open_) return;
 
-    if(ImGui::Begin("Replace asset", &open_)) {
+    if(ImGui::Begin("Import texture", &open_)) {
         if(ImGui::Button("Open Image")) {
             LoadImage();
         }

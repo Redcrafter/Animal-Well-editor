@@ -127,7 +127,7 @@ void TileViewer::draw(GameData& game_data, bool& should_update) {
     should_update |= ImGui::InputScalarN("UV", ImGuiDataType_U16, &uv.pos, 2);
     should_update |= ImGui::InputScalarN("UV Size", ImGuiDataType_U16, &uv.size, 2);
 
-    if(ImGui::Button("Import image")) {
+    if(ImGui::Button("Import texture")) {
         texture_importer.open(selected_tile);
     }
 
