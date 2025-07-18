@@ -244,7 +244,7 @@ static int readInt(const std::string& str) {
     if(!isDigit(str[0]))
         return -1;
     int res = 0;
-    for (auto &c : str) {
+    for(auto& c : str) {
         if(isDigit(c)) {
             res *= 10;
             res += c - '0';
@@ -264,6 +264,7 @@ void GameData::load_folder(const std::string& path) {
 
         int id = readInt(item.path().filename().string());
         if(id == -1) continue;
+        if(files.contains(id)) error_dialog.warning("multiple files with the same id found in project folder.");
         files[id] = item.path().string();
     }
 
@@ -305,6 +306,9 @@ void GameData::load_folder(const std::string& path) {
 void GameData::save_folder(const std::string& path) const {
     auto p = std::filesystem::path(path);
     std::filesystem::create_directories(p);
+
+    // rename .uvs to .tiles
+    if(std::filesystem::exists(p / "254.uvs")) std::filesystem::rename(p / "254.uvs", p / "254.tiles");
     backup_assets(path);
 
     for(size_t i = 0; i < 5; i++) {
@@ -326,7 +330,7 @@ void GameData::backup_assets(const std::string& path) const {
     const auto now = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
     auto bp = p / "backups" / std::format("{:%Y-%m-%d %H-%M}", now);
 
-    // backup with same name already exists. keep old backup 
+    // backup with same name already exists. keep old backup
     if(std::filesystem::exists(bp)) return;
     std::filesystem::create_directories(bp);
 

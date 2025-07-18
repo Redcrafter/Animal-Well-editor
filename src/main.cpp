@@ -312,15 +312,15 @@ class {
         if(has_exported) {
             const auto fileName = std::filesystem::path(export_path).filename().string();
             auto name = "Save In " + fileName;
-            if(ImGui::MenuItem(name.c_str(), "Ctrl+E")) {
-                export_map();
+            if(ImGui::MenuItem(name.c_str(), "Ctrl+S")) {
+                save();
             }
         } else {
-            if(ImGui::MenuItem("Save...", "Ctrl+E")) {
+            if(ImGui::MenuItem("Save...", "Ctrl+S")) {
                 export_explicit();
             }
         }
-        if(ImGui::MenuItem("Save As...", "Ctrl+Shift+E")) {
+        if(ImGui::MenuItem("Save As...", "Ctrl+Shift+S")) {
             export_explicit();
         }
     }
@@ -338,11 +338,11 @@ class {
         }
 
         export_path = path;
-        export_map();
+        save();
     }
     void export_implicit() {
         if(has_exported) {
-            export_map();
+            save();
         } else {
             export_explicit();
         }
@@ -373,7 +373,7 @@ class {
         }
     }
 
-    void export_map() {
+    void save() {
         try {
             game_data.save_folder(export_path);
             has_exported = true;

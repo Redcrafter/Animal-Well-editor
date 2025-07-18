@@ -19,6 +19,7 @@ struct MapHeader {
 
     uint32_t signature2;
 };
+static_assert(sizeof(MapHeader) == 16);
 
 struct MapTile {
     uint16_t tile_id = 0;
