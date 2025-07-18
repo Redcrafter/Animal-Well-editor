@@ -47,6 +47,7 @@ FetchContent_MakeAvailable(cmrc stb imgui glm proggyfonts)
 find_package(OpenGL REQUIRED)
 
 if(EMSCRIPTEN)
+    # glfw functionality provided by emscripten
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_GLFW=3 -s ASSERTIONS=1 -s WASM=1 -s ASYNCIFY -s ASYNCIFY_IMPORTS=[\"emscripten_asm_const_ptr\",\"__syscall_openat\"] -g -gsource-map -s MIN_WEBGL_VERSION=2 -s MAX_WEBGL_VERSION=2 -s ALLOW_MEMORY_GROWTH")
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
 else()
@@ -59,14 +60,11 @@ else()
 
       set(INCLUDES ${GTK2_INCLUDE_DIRS})
       set(LIBS GL ${GTK2_LIBRARIES} stdc++fs pthread)
-
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1")
   endif()
 
   set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
   set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-
 endif()
 
 file(GLOB_RECURSE Common_sources 
@@ -97,13 +95,7 @@ set_target_properties(editor PROPERTIES WIN32_EXECUTABLE TRUE)
 if(MSVC)
     target_compile_options(editor PRIVATE /permissive- /W4 /w14640 /MP)
 endif()
-
-if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" AND NOT EMSCRIPTEN)
-    target_compile_options(editor PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1 -stdlib=libc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
-endif()
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR ((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang") AND (NOT EMSCRIPTEN)))
     target_compile_options(editor PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -pedantic)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -msse4.1")
 endif()

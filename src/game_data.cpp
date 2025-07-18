@@ -1,6 +1,7 @@
 #include "game_data.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
